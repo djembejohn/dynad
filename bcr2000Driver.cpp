@@ -1,0 +1,134 @@
+#include "bcr2000Driver.h"
+
+  
+BCR2000Driver::BCR2000Driver()
+  :setNumber(0), columnModes(32,0), 
+   columnKnobs(32,vector<int> (20,0)), topRowKnobMode(8,false)
+{
+  vector<unsigned int> temp {102,105,106,107,102};
+  ccKnobNumbers = temp;
+}
+
+void BCR2000Driver::setMidiOut (shared_ptr<RtMidiOut> _midiOut) {
+    midiOut = _midiOut;
+}
+
+void BCR2000Driver::changeColumnMode (ControlVariable cvar, int byte2) {
+  int columnNumber = cvar.b0-176+setNumber*8;
+  if (cvar.b1 == 108 && byte2 == 0) {
+    // pressed the up button
+    columnModes[columnNumber] -= 1;
+    if (columnModes[columnNumber] <0)
+      columnModes[columnNumber] = 3;
+    cout << "up: " << columnNumber << " " << columnModes[columnNumber] << endl;
+  }
+  
+  if (cvar.b1 == 109 && byte2 == 0) {
+    columnModes[columnNumber] += 1;
+    // pressed the down button
+    if (columnModes[columnNumber] >3)
+      columnModes[columnNumber] = 0;
+    cout << "down: " << columnNumber << " " << columnModes[columnNumber] << endl;
+  }
+  
+  if (cvar.b1 == 108 || cvar.b1 == 109) {
+    
+    outputColumnMode(columnNumber);
+	
+    if (byte2 == 0)
+	  updateColumnKnobs (columnNumber);
+  }   
+  
+}
+
+void BCR2000Driver::outputColumnMode (int columnNumber) {
+  int topButton = 127; // off for some reason
+  if (columnModes[columnNumber] & 1)
+    topButton = 0;
+  int bottomButton = 127; // off for some reason
+  if (columnModes[columnNumber] > 1)
+    bottomButton = 0;
+  
+  vector<unsigned char> message;
+  message.push_back(columnNumber % 8 + 176);
+  message.push_back(108);
+  message.push_back(topButton);
+  midiOut->sendMessage(&message);
+  
+  message.clear();
+  message.push_back(columnNumber % 8 + 176);
+  message.push_back(109);
+  message.push_back(bottomButton);
+  midiOut->sendMessage(&message);
+    
+}
+
+void BCR2000Driver::updateColumnKnobs (int columnNumber) {
+  
+  for (unsigned int i = 0; i < 4; i++) {
+    int knobNumber = columnModes[columnNumber]*ccKnobNumbers.size() + i;
+    int knobValue = 0;
+    if (i == 0 && topRowKnobMode[columnNumber % 8])
+      knobValue = columnKnobs[columnNumber][knobNumber+4];
+    else
+      knobValue = columnKnobs[columnNumber][knobNumber];
+    
+    vector<unsigned char> message;
+    message.push_back(columnNumber % 8 + 176);
+    message.push_back(ccKnobNumbers[i]);
+    message.push_back(knobValue);
+    midiOut->sendMessage(&message);
+  }
+}
+
+void BCR2000Driver::interpretControlMessage (ControlVariable cvar, int byte2, PolySynthesiser & synth) {
+  if (cvar.b0 >=176 && cvar.b0 <=183) {
+    if (cvar.b1 == 108 || cvar.b1 == 109) 
+      changeColumnMode (cvar,byte2);
+    
+    // needs to intercept knob changes, and thn record them and send
+    // them to different control numbers according to the column
+    // mode
+    int columnNumber = cvar.b0-176+setNumber*8;
+    for (int k = 0; k<4; k++) {
+      if (cvar.b1 == (int)ccKnobNumbers[k]) {
+	int knobNumber;
+	// this checks if the knob is pressed down and records it as knob4.
+	if (k == 0 && topRowKnobMode[columnNumber % 8])
+	  knobNumber = columnModes[columnNumber]*ccKnobNumbers.size() + 4;
+	else
+	  knobNumber = columnModes[columnNumber]*ccKnobNumbers.size() + k;
+	
+	KnobController cont (columnNumber,knobNumber);
+	synth.interpretControlMessage(cont,byte2);
+	
+	cout << columnNumber << ", " << knobNumber << ", " << byte2 << endl;
+	columnKnobs[columnNumber][knobNumber] = byte2;
+      }
+    }
+    
+    
+  }
+}
+
+void BCR2000Driver::initialiseBCR() {
+  for(auto & mode:columnModes) 
+    mode = 0;
+  setNumber = 0;
+  for (int columnNumber = 0; columnNumber<8; columnNumber++) {
+    outputColumnMode(columnNumber);
+    updateColumnKnobs(columnNumber);
+  }
+}
+
+void BCR2000Driver::updateKnobsFromControlSet(RControllerSet controlSet) {
+  for (auto & controller:controlSet->controllers) {
+    setColumnKnobValue(controller.first, controller.second->generateMidiControlMessageValue());
+  }
+}
+
+
+void BCR2000Driver::setColumnKnobValue(KnobController kc, int value) {
+  columnKnobs[kc.column][kc.knobNumber] = value;
+}
+
