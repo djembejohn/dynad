@@ -1,63 +1,86 @@
 #pragma once
 #include "buffer.h"
 #include "jabVector.h"
+#include <fstream>
+#include "controller.h"
 
 using namespace jab;
 using namespace std;
+
+extern ofstream envelopelog;
 
 class Envelope
 {
  public:
   // these need to become controlled
-  double attack;
-  double decay;
-  double sustain;
-  double release;
+  RController attack;
+  RController decay;
+  RController sustain;
+  RController release;
+  bool verbose;
 
-  Envelope (double a,double d,double s,double r)
-    : attack(a),decay(d),sustain(s),release(r)
-    , tStarted(-1), tReleased(-1), internalLevel(1.0)
+  Envelope (RController a,RController d,RController s,RController r)
+    : attack(a),decay(d),sustain(s),release(r),
+    verbose(false), releasePending(true),noteOnPending(false),
+    tStarted(-1), tReleased(-1), 
+    internalLevel(1.0), tStored (-1e9), levelStored(0)
   {
   }
 
   void noteOn (double t, double level) {
     // don't start again if already playing
-    if (tStarted == -1) {
-      tStarted = t;
-      tReleased = -1;
-    }
-    else if (tReleased) {
-      // this is the tricky bit
-      double level = getLevel(t);
-      // now what t would produce this level in the attack phase?
-      double proportion = exponentialLookUpTable.getInverseValueConcaveIncreasing(level);
-      double tRelativeToStart = proportion*attack;
-      tStarted = t-tRelativeToStart;
-      tReleased = -1;
-      cout << "Releasing at level "<<level
-	   << ", proportion " << proportion
-	   << ", relative to start is " << tRelativeToStart
-	   << ", t="<< t
-	   << ", new tStarted=" << tStarted <<endl;
-
-      {
-	double xval = tRelativeToStart/attack;
-	double level = exponentialLookUpTable.getValueConcaveIncreasing(xval);
-	cout << xval << " " <<  level << " "<< getLevel(t) << endl;
-	
-      }
-    }
+    cout << "note pending on" << endl;
+    noteOnPending  = true;
   }
 
   void noteOff (double t) {
-    tReleased = t;
+    if (verbose)
+      cout << "Note off at " << t << endl;
+    releasePending = true;
   }
 
   double getLevel(double t)
   {
+    if (noteOnPending) {
+      noteOnPending = false;
+      if (tStarted == -1) {
+	cout << "note on" << endl;
+	tStarted = t;
+	tReleased = -1;
+	releasePending = false;
+      }
+      else if (tReleased>0) {
+	// this is the tricky bit
+	double level = getLevel(t);
+	// now what t would produce this level in the attack phase?
+	double proportion = exponentialLookUpTable.getInverseValueConcaveIncreasing(level);
+	double tRelativeToStart = proportion*attack->getLevel();
+	tStarted = t-tRelativeToStart;
+	tReleased = -1;
+	releasePending = false;
+	cout << "Releasing at level "<<level
+	     << ", proportion " << proportion
+	     << ", relative to start is " << tRelativeToStart
+	     << ", t="<< t
+	     << ", new tStarted=" << tStarted <<endl;
+	
+	{
+	  double xval = tRelativeToStart/attack->getLevel();
+	  double level = exponentialLookUpTable.getValueConcaveIncreasing(xval);
+	  cout << xval << " " <<  level << " "<< getLevel(t) << endl;
+	  
+	}
+      }
+      
+    }
+    
     if (tStarted == -1)
       return 0.0;
-
+    if (releasePending) {
+      tReleased = t;
+      releasePending = false;
+    }
+    
     double level = 1.0;
     double tRelativeToStart = t-tStarted;
     if (tRelativeToStart <0) {
@@ -67,22 +90,22 @@ class Envelope
     }
 
     // need to make this release properly
-    if (tRelativeToStart<attack && tReleased == -1.0){
-      double xval = tRelativeToStart/attack;
+    if (tRelativeToStart<attack->getLevel() && tReleased == -1.0){
+      double xval = tRelativeToStart/attack->getLevel();
       level = level * exponentialLookUpTable.getValueConcaveIncreasing(xval);
       lastLevelBeforeRelease = level;
     }
-    else if (tRelativeToStart < attack+decay && tReleased == -1.0) {
-      double xval = (tRelativeToStart-attack)/decay;
-      level = level * sustain + level*(1.0-sustain)*exponentialLookUpTable.getValueConcaveDecreasing(xval);
+    else if (tRelativeToStart < attack->getLevel()+decay->getLevel() && tReleased == -1.0) {
+      double xval = (tRelativeToStart-attack->getLevel())/decay->getLevel();
+      level = level * sustain->getLevel() + level*(1.0-sustain->getLevel())*exponentialLookUpTable.getValueConcaveDecreasing(xval);
       lastLevelBeforeRelease = level;
     }
     else if (tReleased == -1.0) {
-      level = level * sustain;
+      level = level * sustain->getLevel();
       lastLevelBeforeRelease = level;
     }
     else {
-      double xval =  (t-tReleased)/release;
+      double xval =  (t-tReleased)/release->getLevel();
       if (xval >=1.0) {
 	level = 0.0;
 	tStarted = -1;
@@ -90,15 +113,23 @@ class Envelope
       else
 	level = level * lastLevelBeforeRelease*exponentialLookUpTable.getValueConcaveDecreasing(xval);
     }
+    tStored = t;
+    levelStored = level;
+    if (verbose)
+      envelopelog << t << " " << level << endl;
     return level;
   }
 
 private:
+  bool releasePending;
+  bool noteOnPending;
+
   double tStarted;
   double tReleased;
   double lastLevelBeforeRelease;
   double internalLevel;
-  bool verbose;
+  double tStored;
+  double levelStored;
 };
 
 typedef shared_ptr<Envelope> REnvelope;

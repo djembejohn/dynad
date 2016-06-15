@@ -6,8 +6,10 @@
 #include <boost/random/normal_distribution.hpp>
 #include <boost/random/variate_generator.hpp>
 #include <boost/thread/mutex.hpp>
+#include "Stk.h"
 
 using namespace std;
+using namespace stk;
 using namespace jab;
 
 typedef boost::mt19937 base_rng_type;
@@ -22,15 +24,16 @@ extern class SinWaveLookupTable sinWaveLookupTable;
 extern class ExponentialLookUpTable exponentialLookUpTable;
 extern class FrequencyModulatorExponentialLookUpTable frequencyModulatorExponentialLookUpTable;
 
+template<class T=StkFloat>
 class BufferWithMutex : public boost::mutex, public PCountedHeapObject
 {
  public:
  BufferWithMutex(double _timeStart, double _sampleRate, 
 		 unsigned int _numberOfFrames, 
-		 unsigned int _numberOfChannels, float * _outbuf)
+		 unsigned int _numberOfChannels)
    : timeStart(_timeStart), sampleRate (_sampleRate),
     numberOfFrames(_numberOfFrames), numberOfChannels(_numberOfChannels),
-    bufferSize (numberOfFrames*numberOfChannels), outbuf (_outbuf)
+ bufferSize (numberOfFrames*numberOfChannels), outbuf (bufferSize,0)
   {}
   
   double timeStart;
@@ -38,15 +41,11 @@ class BufferWithMutex : public boost::mutex, public PCountedHeapObject
   unsigned int numberOfFrames;
   unsigned int numberOfChannels;
   
-  float & at (unsigned int index) {
-    if (index >= bufferSize) {
-      throw "Overreached buffer size!";
-    }
-    else
-      return outbuf[index];
+  T & at (unsigned int index) {
+    return outbuf.at(index);
   }
 
-  float * getOutBuf() {
+  safeVector<T> & getOutBufRef() {
     return outbuf;
   }
 
@@ -54,10 +53,10 @@ class BufferWithMutex : public boost::mutex, public PCountedHeapObject
 
   size_t bufferSize;
 
-  float * outbuf;
+  safeVector<T> outbuf;
 };
 
-typedef shared_ptr<BufferWithMutex> RBufferWithMutex;
+typedef shared_ptr<BufferWithMutex<> > RBufferWithMutex;
 
 
 class ExponentialLookUpTable
@@ -65,7 +64,7 @@ class ExponentialLookUpTable
  public:
 
   ExponentialLookUpTable () 
-    : bufferSize(1024)
+    : bufferSize(4096)
   {
     // so that proportions can be between 0 and 1, I need to make the
     // buffer size one bigger
@@ -206,7 +205,7 @@ class SinWaveLookupTable
 public:
 
   SinWaveLookupTable () 
-    : bufferSize(2048)
+    : bufferSize(16384)
   {
     buffer.resize(bufferSize+1,0.0);
     for (size_t i = 0; i< bufferSize; i++) 

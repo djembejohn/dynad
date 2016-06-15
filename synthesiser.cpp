@@ -1,24 +1,26 @@
 #include "synthesiser.h"
 
 
-PolySynthesiser::PolySynthesiser () 
+PolySynthesiser::PolySynthesiser (int numPartials, int numPhones) 
   : recording("recording")
 {
   controlSet = RControllerSet (new ControllerSet());
   
-  KnobController cvar_volume (16, 0);
-  RController volume (new ControllableLevelLinear (0.1));
-  masterVolume = volume;
-  controlSet->addController (volume,16,0,"masterVolume");
+  masterVolume = controlSet->getController("masterVolume");
+
   
-  for (int i = 0; i<20; i++) {
+  for (int i = 0; i<numPhones; i++) {
     
-    phones.push_back(RPhone (new Phone (controlSet, volume)));
+    RPhone phone (new Phone (controlSet, masterVolume,numPartials));
+    phones.push_back(phone);
     
+    //    if (i == 0)
+    //      phone->phoneEnvelope->verbose = true;
     timePhoneStarted.push_back(0.0);
   }
   notesOn.resize(256,0);
 }
+
 
 void PolySynthesiser::save(string filename) {
   lock();
@@ -31,16 +33,38 @@ void PolySynthesiser::load(string filename) {
   lock();
   cout << "Loading from " << filename << endl;
   controlSet->load(filename);
+  morphSet = 0;
   bcr2000Driver.updateKnobsFromControlSet (controlSet);
   bcr2000Driver.initialiseBCR();
   unlock();
 }
 
+void PolySynthesiser::updateController() {
+  bcr2000Driver.updateKnobsFromControlSet (controlSet);
+  bcr2000Driver.initialiseBCR();
+}
+
+void PolySynthesiser::loadMorph(string fname1, string fname2) {
+  lock();
+  morphSet = RMorphControllerSet(new MorphControllerSet);
+  morphSet->outputSet = controlSet;
+  morphSet->inputSet1 = RControllerSet(new ControllerSet);
+  morphSet->inputSet2 = RControllerSet(new ControllerSet);
+  morphSet->inputSet1->load (fname1);
+  morphSet->inputSet2->load (fname2);
+  morphSet->initControlVectors();
+  unlock();
+}
+
+
 void PolySynthesiser::interpretControlMessage (KnobController con, int val) {
   lock();
+  if (morphSet) if (morphSet->cvar_morphValue == con) {
+      morphSet->morphOutput ((double)val/127.0);
+  }
   RController controller = controlSet->getController(con);
   if (controller) 
-    controller->receiveMidiControlMessage (val);
+    controller->receiveMidiControlMessage (val); 
   unlock();
 }
 
@@ -92,7 +116,7 @@ void PolySynthesiser::noteOn (int noteVal, int velocity) {
     noteBeingPlayed[phone] = noteVal;
     timePhoneStarted[phoneIndex] = t;
     
-    phone->masterEnvelope->noteOn(t, (double)velocity/127.0);
+    phone->phoneEnvelope->noteOn(t, (double)velocity/127.0);
     phone->masterNote->receiveMidiControlMessage(noteVal);
   }
   unlock();
@@ -105,7 +129,7 @@ void PolySynthesiser::noteOff (int noteVal, int velocity) {
   if (notesOn[noteVal]) {
     RPhone phone = notesOn[noteVal];
     noteBeingPlayed[phone] = 0;
-    phone->masterEnvelope->noteOff(t);
+    phone->phoneEnvelope->noteOff(t);
     notesOn[noteVal] = 0;
   }
   unlock();

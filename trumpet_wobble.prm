@@ -126,6 +126,10 @@ level_6 0.136583
 level_7 0.0586574
 level_8 0.0464417
 level_9 0.0278931
+masterAttack 0.01
+masterDecay 0.001
+masterRelease 1.02236
+masterSustain 1
 masterVolume 0.0551181
 saw_0 0
 saw_1 0

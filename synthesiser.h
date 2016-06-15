@@ -15,6 +15,7 @@ extern int stringToMidiNote (string note);
 
 using namespace std;
 
+extern ofstream outlog;
 
 class Partial
 {
@@ -25,9 +26,9 @@ public:
   list<REnvelope> envelopes;
   RController masterVolume;
 
-  Partial (RController _masterVolume, RController level, RController noteFrequency, RController frequencyMultiplier, RController frequencyNoise = 0, RController distortion = 0, RController shape = 0)
-    : oscillator (level, frequencyMultiplier, noteFrequency, frequencyNoise, distortion, shape),
-    masterVolume(_masterVolume)
+  Partial (RController _masterVolume, RController level, RController noteFrequency, RController frequencyMultiplier, RController frequencyNoise = 0, RController distortion = 0, RController squareshape = 0, RController sawshape = 0)
+    : oscillator (level, frequencyMultiplier, noteFrequency, frequencyNoise, distortion, squareshape, sawshape),
+    masterVolume(_masterVolume),timeCounter(0.0)
     {}
     
   void playToThreadSafeBuffer(RBufferWithMutex threadSafeBuffer) {
@@ -35,27 +36,29 @@ public:
     //	 << " " << threadSafeBuffer->numberOfFrames
     //	 << " " << threadSafeBuffer->sampleRate << endl;
     const size_t subBufferIncrement=256;
-    double timeCounter = threadSafeBuffer->timeStart;
+    //    double timeCounter = threadSafeBuffer->timeStart;
     double sampleRate = threadSafeBuffer->sampleRate;
     int numChannels = threadSafeBuffer->numberOfChannels;
-    vector<float> subBuffer (subBufferIncrement*numChannels,0.0);
+    vector<StkFloat> subBuffer (subBufferIncrement*numChannels,0.0);
     size_t bufferNumFrames = threadSafeBuffer->numberOfFrames;
 
     for (size_t i = 0; i<bufferNumFrames; i += subBufferIncrement) {
-      timeCounter += (double)subBufferIncrement/sampleRate;
       size_t thisBufferNumFrames = subBufferIncrement;
       if (i+subBufferIncrement > bufferNumFrames) {
 	thisBufferNumFrames = bufferNumFrames-i;
       }
       playToBuffer(subBuffer,sampleRate,thisBufferNumFrames,numChannels,timeCounter);
       threadSafeBuffer->lock();
-      float * outbuf = threadSafeBuffer->getOutBuf();
+      safeVector<StkFloat> & outbuf = threadSafeBuffer->getOutBufRef();
       for (size_t j = 0; j<thisBufferNumFrames*numChannels; j++) {
-	outbuf[i*numChannels+j] += subBuffer[j];
+	StkFloat value = outbuf[i*numChannels+j]+subBuffer[j];
+	outbuf[i*numChannels+j] = value;
 	subBuffer[j] = 0;
       }
       threadSafeBuffer->unlock();
+      timeCounter += (double)thisBufferNumFrames/sampleRate;
     }
+    //    timeCounter += (double)bufferNumFrames/sampleRate;
 
   }
 
@@ -112,23 +115,29 @@ public:
   
  private:
 
-  void playToBuffer (vector<float> & buffer, double sampleRate, unsigned int numFrames, int numChannels, double tStart) 
+  void playToBuffer (vector<StkFloat> & buffer, double sampleRate, unsigned int numFrames, int numChannels, double tStart) 
   {
     for (unsigned int i = 0; i<numFrames; i++) {
       double timePoint = tStart+(double)i/sampleRate;
-      double level = masterVolume->getLevel();
+      double level = 1.0;
       //      for (auto & osc:amp_oscillators) {
       //	level = level + osc.getValue(timePoint);
       //      }
-      for (auto & env:envelopes) {
-      	level = level * env->getLevel(timePoint);
+      StkFloat value = oscillator.getValue(timePoint);
+      
+      if (value!=0.0) {
+	level = level * masterVolume->getLevel();
+	for (auto & env:envelopes) {
+	  level = level * env->getLevel(timePoint);
+	}
       }
-      double value = oscillator.getValue(timePoint);
       // must implement pan ;)
       for (int j = 0; j<numChannels; j++)
 	buffer[i*numChannels+j] += value * level;
     }
   }
+
+  double timeCounter;
 
 };
 
@@ -187,18 +196,24 @@ class Phone
   RController masterVolume;
 
   list<RPartial> partials;
-  REnvelope masterEnvelope;
+  REnvelope phoneEnvelope;
   RNoteControlledFrequency masterNote;
 
   double baseFrequency = 440.0;
+  int numPartials;
   //  double t = 0;
 
-  Phone (RControllerSet _controlSet, RController _masterVolume) 
-    : controlSet(_controlSet), masterVolume (_masterVolume)
+  Phone (RControllerSet _controlSet, RController _masterVolume, int _numPartials) 
+    : controlSet(_controlSet), masterVolume (_masterVolume), numPartials (_numPartials)
     {
-      masterEnvelope = REnvelope(new Envelope (0.6,0.0,1.0,2.0));
+      RController attack = controlSet->getController ("masterAttack");
+      RController decay = controlSet->getController ("masterDecay");
+      RController sustain  = controlSet->getController ("masterSustain");
+      RController release = controlSet->getController ("masterRelease");
+      
+      phoneEnvelope = REnvelope(new Envelope (attack,decay,sustain,release));
       KnobController cvar_note (0, 0);
-      RNoteControlledFrequency note (new NoteControlledFrequency (440));
+      RNoteControlledFrequency note (new NoteControlledFrequency ("note",440));
       masterNote = note;
 
       // need to think a bit more about how controllers work for notes
@@ -207,16 +222,17 @@ class Phone
       // basically, need to implement a layer of controllers which can
       // be talked to by midi or OSC or anything really
 
-      for (int i = 0; i< 16; i++) {
+      for (int i = 0; i<numPartials; i++) {
 	
 	RController freqmult = controlSet->getController("freqMult",i);
 	RController level = controlSet->getController("level",i);
 	RController frequencyNoise = controlSet->getController("frequencyNoise",i);
 	RController shape = controlSet->getController("shape",i);
+	RController saw = controlSet->getController("saw",i);
 	RController distortion = controlSet->getController("distortion",i);
 
-	RPartial newPartial = RPartial(new Partial (masterVolume, level, note.GetPointer(), freqmult, frequencyNoise, distortion,shape));
-	newPartial->addEnvelope (masterEnvelope);
+	RPartial newPartial = RPartial(new Partial (masterVolume, level, note.GetPointer(), freqmult, frequencyNoise, distortion,shape,saw));
+	newPartial->addEnvelope (phoneEnvelope);
 
 	RController amposclevel = controlSet->getController("amposclevel",i);
 	RController amposcfreq  = controlSet->getController("amposcfreq",i);
@@ -261,7 +277,7 @@ class Phone
        //    thread2.waitForThread();
     //    thread1.stopThread();
     //    thread2.stopThread();
-#elif 1
+#elif 0
     ThreadedPartialPlayer threadplayer1(plist,buffer);
     ThreadedPartialPlayer threadplayer2(plist,buffer);
     //    ThreadedPartialPlayer threadplayer3(plist,buffer);
@@ -304,11 +320,11 @@ class MonoSynthesiser
     controlSet = RControllerSet (new ControllerSet());
 
     KnobController cvar_volume (16, 0);
-    RController volume (new ControllableLevelLinear (0.1));
+    RController volume (new ControllableLevelLinear ("masterVolume",0.1));
     masterVolume = volume;
-    controlSet->addController (volume,16,0,"masterVolume");
+    controlSet->addController (volume,16,0);
 
-    phone = RPhone (new Phone (controlSet, volume));
+    phone = RPhone (new Phone (controlSet, volume,16));
     
   }
 
@@ -350,7 +366,7 @@ class MonoSynthesiser
     if (!notesOn[noteVal]) {
       notesOn[noteVal] = true;
       numNotesOn ++;
-      phone->masterEnvelope->noteOn(t, (double)velocity/127.0);
+      phone->phoneEnvelope->noteOn(t, (double)velocity/127.0);
       phone->masterNote->receiveMidiControlMessage(noteVal);
     }
   }
@@ -363,7 +379,7 @@ class MonoSynthesiser
       numNotesOn --;
     }
     if (numNotesOn == 0)
-      phone->masterEnvelope->noteOff(t);
+      phone->phoneEnvelope->noteOff(t);
   }
 
   int numNotesOn;
@@ -376,6 +392,7 @@ class PolySynthesiser : public boost::mutex
 {
  public:
   RControllerSet controlSet;
+  RMorphControllerSet morphSet;
   RController masterVolume;
 
   double t = 0;
@@ -388,13 +405,17 @@ class PolySynthesiser : public boost::mutex
 
   map<RPhone,int> noteBeingPlayed;
 
-  PolySynthesiser ();
+  PolySynthesiser (int numPartials=16, int numPhones=12);
 
   void save(string filename);
   void load(string filename);
+  void loadMorph(string fname1, string fname2);
   void interpretControlMessage (KnobController con, int val);
   void playToBuffer (RBufferWithMutex buffer);
   void noteOn (int noteVal, int velocity);
   void noteOff (int noteVal, int velocity);
- 
+  void updateController(); 
 };
+
+typedef shared_ptr<PolySynthesiser> RPolySynthesiser;
+

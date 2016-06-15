@@ -159,29 +159,29 @@ buffer.cpp.s:
 	$(MAKE) -f CMakeFiles/johnsynth.dir/build.make CMakeFiles/johnsynth.dir/buffer.cpp.s
 .PHONY : buffer.cpp.s
 
-generateTone.o: generateTone.cpp.o
-.PHONY : generateTone.o
+controller.o: controller.cpp.o
+.PHONY : controller.o
 
 # target to build an object file
-generateTone.cpp.o:
-	$(MAKE) -f CMakeFiles/johnsynth.dir/build.make CMakeFiles/johnsynth.dir/generateTone.cpp.o
-.PHONY : generateTone.cpp.o
+controller.cpp.o:
+	$(MAKE) -f CMakeFiles/johnsynth.dir/build.make CMakeFiles/johnsynth.dir/controller.cpp.o
+.PHONY : controller.cpp.o
 
-generateTone.i: generateTone.cpp.i
-.PHONY : generateTone.i
+controller.i: controller.cpp.i
+.PHONY : controller.i
 
 # target to preprocess a source file
-generateTone.cpp.i:
-	$(MAKE) -f CMakeFiles/johnsynth.dir/build.make CMakeFiles/johnsynth.dir/generateTone.cpp.i
-.PHONY : generateTone.cpp.i
+controller.cpp.i:
+	$(MAKE) -f CMakeFiles/johnsynth.dir/build.make CMakeFiles/johnsynth.dir/controller.cpp.i
+.PHONY : controller.cpp.i
 
-generateTone.s: generateTone.cpp.s
-.PHONY : generateTone.s
+controller.s: controller.cpp.s
+.PHONY : controller.s
 
 # target to generate assembly for a file
-generateTone.cpp.s:
-	$(MAKE) -f CMakeFiles/johnsynth.dir/build.make CMakeFiles/johnsynth.dir/generateTone.cpp.s
-.PHONY : generateTone.cpp.s
+controller.cpp.s:
+	$(MAKE) -f CMakeFiles/johnsynth.dir/build.make CMakeFiles/johnsynth.dir/controller.cpp.s
+.PHONY : controller.cpp.s
 
 main.o: main.cpp.o
 .PHONY : main.o
@@ -246,9 +246,9 @@ help:
 	@echo "... buffer.o"
 	@echo "... buffer.i"
 	@echo "... buffer.s"
-	@echo "... generateTone.o"
-	@echo "... generateTone.i"
-	@echo "... generateTone.s"
+	@echo "... controller.o"
+	@echo "... controller.i"
+	@echo "... controller.s"
 	@echo "... main.o"
 	@echo "... main.i"
 	@echo "... main.s"

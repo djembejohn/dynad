@@ -66,3 +66,10 @@ bool operator < (KnobController const& lhs, KnobController const& rhs)
     return lhs.knobNumber < rhs.knobNumber;
   return false;
 }
+
+bool operator == (KnobController const& lhs, KnobController const& rhs)
+{
+  if (lhs.column != rhs.column)
+    return false;
+  return lhs.knobNumber == rhs.knobNumber;
+}

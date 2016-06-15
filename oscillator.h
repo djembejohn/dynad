@@ -7,29 +7,33 @@ class Oscillator
 {
  public:
   
-  RController level;
+  SmoothedController level;
   RController noteFrequency;
   RController frequencyMultiplier;
   RController frequencyNoise;
   RController distortion;
   RController squareness;
+  RController sawness;
   
   ROscillator frequencyOscillator;
   ROscillator amplitudeOscillator;
 
-  Oscillator (RController _level, RController _frequencyMultiplier, RController _noteFrequency = 0, RController _frequencyNoise = 0, RController _distortion = 0, RController _squareness = 0)
-    : level(_level), noteFrequency (_noteFrequency), 
+  Oscillator (RController _level, RController _frequencyMultiplier, 
+	      RController _noteFrequency = 0, RController _frequencyNoise = 0, 
+	      RController _distortion = 0, RController _squareness = 0, 
+	      RController _sawness = 0)
+    : level(_level,0.001), noteFrequency (_noteFrequency), 
     frequencyMultiplier (_frequencyMultiplier), 
     frequencyNoise(_frequencyNoise), distortion (_distortion),
-    squareness (_squareness), 
+    squareness (_squareness), sawness(_sawness),
     frequencyOscillator(0), amplitudeOscillator(0),
     previous_t(0.0), internal_phase (0.0), 
     frequencyNoisepos(0.0)
     {
       target_frequency = 1.0;
       if (noteFrequency)
-	target_frequency = target_frequency *noteFrequency->getLevel();
-      target_frequency =  target_frequency*frequencyMultiplier->getLevel();
+	target_frequency = target_frequency *noteFrequency->getOutputLevel();
+      target_frequency =  target_frequency*frequencyMultiplier->getOutputLevel();
       internal_frequency = target_frequency;
     }
   
@@ -40,20 +44,24 @@ class Oscillator
   double getValue(double t) {
     double t_advance = t-previous_t;
     previous_t = t;
+
+    double internalLevel = level.getOutputLevel();
+    if (internalLevel == 0)
+      return 0;
     
     target_frequency = 1.0;
     if (noteFrequency)
-      target_frequency = target_frequency *noteFrequency->getLevel();
-    target_frequency =  target_frequency*frequencyMultiplier->getLevel();
+      target_frequency = target_frequency *noteFrequency->getOutputLevel();
+    target_frequency =  target_frequency*frequencyMultiplier->getOutputLevel();
     
     
-    if (frequencyOscillator) if (frequencyOscillator->level > 0)
+    if (frequencyOscillator) if (frequencyOscillator->level.getOutputLevel() > 0)
       target_frequency = target_frequency*frequencyModulatorExponentialLookUpTable.getValue (frequencyOscillator->getValue(t));
     
     if (frequencyNoise) {
       frequencyNoisepos -= frequencyNoisepos*0.01;
-      if (frequencyNoise->getLevel() > 0) {
-      double frequencyNoise_level = frequencyNoise->getLevel()*frequencyNoise->getLevel();
+      if (frequencyNoise->getOutputLevel() > 0) {
+      double frequencyNoise_level = frequencyNoise->getOutputLevel()*frequencyNoise->getOutputLevel();
 	frequencyNoisepos += frequencyNoise_level*noisegen.get();
 	target_frequency += frequencyNoisepos;
       }
@@ -70,14 +78,14 @@ class Oscillator
 #if 0
     // this is something I dreamed up which makes the waveform squarer
     // or pointier - it does add in some harmonics but hey ho
-    if (squareness) if (squareness->getLevel()>0 && squareness->getLevel() != 0.5) {
+    if (squareness) if (squareness->getOutputLevel()>0 && squareness->getOutputLevel() != 0.5) {
       double inner_phase = 2.0*internal_phase;
       while (inner_phase>2*local_pi)
 	inner_phase -= local_pi;
       while (inner_phase<0)
 	inner_phase += local_pi;
       
-      double squarenessval = 2.0*squareness->getLevel()-1.0;
+      double squarenessval = 2.0*squareness->getOutputLevel()-1.0;
       local_phase = local_phase + squarenessval*sinWaveLookupTable.getValue(inner_phase);
 
       while (local_phase > 2*local_pi)
@@ -85,7 +93,7 @@ class Oscillator
       while (local_phase <0)
 	local_phase += 2*local_pi;
 
-      //      cout << squareness->getLevel() << " " 
+      //      cout << squareness->getOutputLevel() << " " 
       //	   << squarenessval << " " 
       //	   << internal_phase << " " << local_phase<< endl;
     }
@@ -96,7 +104,7 @@ class Oscillator
     double value = sinWaveLookupTable.getValue(local_phase);
 
     if (squareness) {
-      double squareness_val = squareness->getLevel();
+      double squareness_val = squareness->getOutputLevel();
       if (squareness_val > 0) {
 	double square_wave_value = local_phase<local_pi ? 1.0 : -1.0;
 	value = (1.0-squareness_val)*value + squareness_val*square_wave_value;
@@ -104,10 +112,17 @@ class Oscillator
     }
 #endif
 
+    if (sawness) {
+      double sawness_val = sawness->getOutputLevel();
+      if (sawness_val > 0) {
+	double saw_wave_value = 1.0-local_phase/local_pi;
+	value = (1.0-sawness_val)*value + sawness_val*saw_wave_value;
+      }
+    }
 
 
     if (distortion) {
-      double distortionLevel = distortion->getLevel();
+      double distortionLevel = distortion->getOutputLevel();
       if (distortionLevel > 0.0) {
 	if (value > 1.0-distortionLevel)
 	  value = 1.0-distortionLevel;
@@ -117,11 +132,11 @@ class Oscillator
       }
     }
     double thisLevel = 1.0;
-    if (amplitudeOscillator) if (amplitudeOscillator->level > 0)
+    if (amplitudeOscillator) if (amplitudeOscillator->level.getOutputLevel() > 0)
       thisLevel += amplitudeOscillator->getValue(t);
-    //    if (frequencyMultiplier->getLevel() == 1.0)
+    //    if (frequencyMultiplier->getOutputLevel() == 1.0)
     //      cout << thisLevel << endl;
-    value = value * thisLevel * level->getLevel();;
+    value = value * thisLevel * internalLevel;
     return value;
   }
 
@@ -138,4 +153,5 @@ private:
   double internal_frequency;
   double target_frequency;
   double frequencyNoisepos;
+  static int newID;
 };

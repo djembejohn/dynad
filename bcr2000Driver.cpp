@@ -13,6 +13,34 @@ void BCR2000Driver::setMidiOut (shared_ptr<RtMidiOut> _midiOut) {
     midiOut = _midiOut;
 }
 
+void BCR2000Driver::changeSetNumber (ControlVariable cvar, int byte2) {
+  if (byte2 >0) {
+    if (cvar.b1>89 && cvar.b1<94) 
+      setNumber = cvar.b1-90;
+
+    for (int i = 0; i<8; i++) {
+      updateColumnKnobs (i+setNumber*8);
+      outputColumnMode (i+setNumber*8);
+    }
+  }
+  
+  outputSetNumber();
+}
+
+void BCR2000Driver::outputSetNumber () {
+  for (int i = 0; i<4; i++) {
+    vector<unsigned char> message;
+    message.push_back(191);
+    message.push_back(i+90);
+    if (i == setNumber) 
+      message.push_back(127);
+    else
+      message.push_back(0);
+    midiOut->sendMessage(&message);
+  }
+}
+
+
 void BCR2000Driver::changeColumnMode (ControlVariable cvar, int byte2) {
   int columnNumber = cvar.b0-176+setNumber*8;
   if (cvar.b1 == 108 && byte2 == 0) {
@@ -81,7 +109,11 @@ void BCR2000Driver::updateColumnKnobs (int columnNumber) {
   }
 }
 
-void BCR2000Driver::interpretControlMessage (ControlVariable cvar, int byte2, PolySynthesiser & synth) {
+void BCR2000Driver::interpretControlMessage (ControlVariable cvar, int byte2, RPolySynthesiser synth) {
+  if (cvar.b0 == 191 && cvar.b1 >89 && cvar.b1 < 94) {
+    changeSetNumber(cvar,byte2);
+  }
+
   if (cvar.b0 >=176 && cvar.b0 <=183) {
     if (cvar.b1 == 108 || cvar.b1 == 109) 
       changeColumnMode (cvar,byte2);
@@ -100,7 +132,7 @@ void BCR2000Driver::interpretControlMessage (ControlVariable cvar, int byte2, Po
 	  knobNumber = columnModes[columnNumber]*ccKnobNumbers.size() + k;
 	
 	KnobController cont (columnNumber,knobNumber);
-	synth.interpretControlMessage(cont,byte2);
+	synth->interpretControlMessage(cont,byte2);
 	
 	cout << columnNumber << ", " << knobNumber << ", " << byte2 << endl;
 	columnKnobs[columnNumber][knobNumber] = byte2;
@@ -115,6 +147,7 @@ void BCR2000Driver::initialiseBCR() {
   for(auto & mode:columnModes) 
     mode = 0;
   setNumber = 0;
+  outputSetNumber();
   for (int columnNumber = 0; columnNumber<8; columnNumber++) {
     outputColumnMode(columnNumber);
     updateColumnKnobs(columnNumber);
