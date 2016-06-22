@@ -6,8 +6,8 @@
 
 using namespace std;
 
-extern double midiNoteToFrequency (int note);
-extern double stringToFrequency (string note);
+extern StkFloat midiNoteToFrequency (int note);
+extern StkFloat stringToFrequency (string note);
 extern int stringToMidiNote (string note);
 
 typedef boost::mt19937 base_generator_type;
@@ -110,7 +110,7 @@ class ControlVariable
 class AController: public PCountedMutexHeapObject
 {
  public:
- AController(string _name="", double _level=1.0)
+ AController(string _name="", StkFloat _level=1.0)
    : name(_name), level (_level), outputLevel (level), adjustment(0.0)
   {}
   
@@ -120,8 +120,8 @@ class AController: public PCountedMutexHeapObject
   
   virtual int generateMidiControlMessageValue () = 0;
 
-  double getOutputLevel() {
-    double outputLevel = level + adjustment;
+  StkFloat getOutputLevel() {
+    StkFloat outputLevel = level + adjustment;
     if (outputLevel <0)
       outputLevel = 0;
     //    if (name == "level_0") 
@@ -129,16 +129,17 @@ class AController: public PCountedMutexHeapObject
     return outputLevel;
   }
   
-  double getLevel () {
+  StkFloat getLevel () {
     return level;
   }
   
-  bool setLevel (double _level) {
+  virtual bool setLevel (StkFloat _level) {
     level = _level;
     return false;
   }
 
-  void setAdjustment (double amount) {
+  void setAdjustment (StkFloat amount) {
+    //    cout << "New adjustment: " << amount << endl;
     adjustment = amount;
   }
 
@@ -150,12 +151,15 @@ class AController: public PCountedMutexHeapObject
     return name;
   }
 
+  virtual void postLoadUpdate () {
+  }
+
  private:
   string name;
-  double level; 
+  StkFloat level; 
 
-  double outputLevel;
-  double adjustment;
+  StkFloat outputLevel;
+  StkFloat adjustment;
 
 
 };
@@ -167,13 +171,13 @@ class SmoothedController
  public:
     RController controller;
  
-    SmoothedController (RController _controller, double _smoothingFactor)
+    SmoothedController (RController _controller, StkFloat _smoothingFactor)
       : controller(_controller), level (controller->getOutputLevel()), smoothingFactor(_smoothingFactor)
       {}
 
-    double getOutputLevel() {
-      double targetLevel = controller->getOutputLevel();
-      double change = targetLevel-level;
+    StkFloat getOutputLevel() {
+      StkFloat targetLevel = controller->getOutputLevel();
+      StkFloat change = targetLevel-level;
       change = change*smoothingFactor;
       level += change;
 
@@ -181,8 +185,8 @@ class SmoothedController
     }
     
  private:
-    double level;
-    double smoothingFactor;
+    StkFloat level;
+    StkFloat smoothingFactor;
 
  };
 
@@ -191,7 +195,7 @@ class NoteControlledFrequency: public AController
 {
  public:
 
-  NoteControlledFrequency (string name, double _frequency)
+  NoteControlledFrequency (string name, StkFloat _frequency)
     : AController(name, _frequency)
   {}
 
@@ -211,13 +215,13 @@ class ControllableFrequencyMultiplier: public AController
 {
  public:
 
-  ControllableFrequencyMultiplier (string name, double _level)
+  ControllableFrequencyMultiplier (string name, StkFloat _level)
     : AController(name,_level)
   {}
   
   void receiveMidiControlMessage(int value){
     // update the frequencyMultiplier in some way based on the value
-    setLevel ((double)value+1.0);
+    setLevel ((StkFloat)value+1.0);
   }
   int generateMidiControlMessageValue () {
     return (int)(getLevel()-1);
@@ -228,12 +232,12 @@ class ControllableFrequencyMultiplier: public AController
 class ControllableFrequencyLFO: public AController
 {
  public:
-  double frequency;
-  ControllableFrequencyLFO (string name, double _level=2.0)
+  StkFloat frequency;
+  ControllableFrequencyLFO (string name, StkFloat _level=2.0)
     : AController(name, _level)
   {}
   void receiveMidiControlMessage(int value){
-    setLevel (0.1+exponentialLookUpTable.getValueConcaveIncreasing (double(value)/(127.0))*20);
+    setLevel (0.1+exponentialLookUpTable.getValueConcaveIncreasing (StkFloat(value)/(127.0))*20);
   }   
   int generateMidiControlMessageValue () {
     return (int)(127*exponentialLookUpTable.getInverseValueConcaveIncreasing((getLevel()-0.1)/20));
@@ -244,11 +248,11 @@ class ControllableFrequencyLFO: public AController
 class ControllableLevelSquared: public AController
 {
  public:
-  ControllableLevelSquared (string name, double _level=0.0)
+  ControllableLevelSquared (string name, StkFloat _level=0.0)
     : AController(name, _level)
   {}
   void receiveMidiControlMessage(int value){
-    setLevel (double(value*value)/(127.0*127.0));
+    setLevel (StkFloat(value*value)/(127.0*127.0));
     //    cout << "New squared level=" << getLevel() << endl;
   }   
   int generateMidiControlMessageValue () {
@@ -260,32 +264,32 @@ class ControllableLevelSquared: public AController
 class ControllableLevelLinear: public AController
 {
  public:
-  ControllableLevelLinear (string name, double _level=0.0, double _min = 0.0, double _max = 1.0)
+  ControllableLevelLinear (string name, StkFloat _level=0.0, StkFloat _min = 0.0, StkFloat _max = 1.0)
     : AController(name, _level),maxLevel(_max),minLevel(_min)
   {}
 
 
   void receiveMidiControlMessage(int value){
-    setLevel (minLevel + (maxLevel-minLevel)*double(value)/(127.0));
+    setLevel (minLevel + (maxLevel-minLevel)*StkFloat(value)/(127.0));
     //    cout << "New linear level=" << getLevel() << endl;
   }   
   int generateMidiControlMessageValue () {
     return (int)((getLevel()-minLevel) *127.0/(maxLevel-minLevel));
   }
 
-  double maxLevel;
-  double minLevel;
+  StkFloat maxLevel;
+  StkFloat minLevel;
 };
 
 
 class ControllableLevelConcaveIncreasing: public AController
 {
  public:
-  ControllableLevelConcaveIncreasing (string name, double _level=0.0, double _levelMultiplier = 1.0)
+  ControllableLevelConcaveIncreasing (string name, StkFloat _level=0.0, StkFloat _levelMultiplier = 1.0)
     : AController(name, _level), levelMultiplier(_levelMultiplier)
   {}
   void receiveMidiControlMessage(int value){
-    setLevel (levelMultiplier * exponentialLookUpTable.getValueConcaveIncreasing (double(value)/(127.0)));
+    setLevel (levelMultiplier * exponentialLookUpTable.getValueConcaveIncreasing (StkFloat(value)/(127.0)));
     //    cout << "New concave exponential level=" << getLevel() << endl;
   }   
   int generateMidiControlMessageValue () {
@@ -293,7 +297,7 @@ class ControllableLevelConcaveIncreasing: public AController
   }
 
  private:
-  double levelMultiplier;
+  StkFloat levelMultiplier;
 };
 
 
@@ -314,12 +318,12 @@ class AMasterController : public AController
 {
  public:
 
-  AMasterController (string name, double level)
+  AMasterController (string name, StkFloat level)
     : AController (name,level)
   { }
   
   // this is from the input
-  virtual bool receiveLevelFromSubController (string & name, double level) = 0;
+  virtual bool receiveLevelFromSubController (string & name, StkFloat level) = 0;
 
 };
 
@@ -331,13 +335,13 @@ class SubController : public AController
 {
  public:
 
-  SubController (string name, RMasterController _master, string _conclass, double level,double smoothingFactor = 1.0)
+  SubController (string name, RMasterController _master, string _conclass, StkFloat level,StkFloat smoothingFactor = 1.0)
     : AController(name,level), master(_master), conclass(_conclass)
   {
     master->receiveLevelFromSubController (name,level);
   }
   
-  bool setLevel (double level) {
+  bool setLevel (StkFloat level) {
     bool response = master->receiveLevelFromSubController (conclass, level);
     AController::setLevel(level);
     return response;
@@ -353,11 +357,11 @@ class SubController : public AController
 class SubControllableLevelConcaveIncreasing: public SubController
 {
  public:
-  SubControllableLevelConcaveIncreasing (string name, RMasterController master, string conclass, double level=0.0, double _levelMultiplier = 1.0)
+  SubControllableLevelConcaveIncreasing (string name, RMasterController master, string conclass, StkFloat level=0.0, StkFloat _levelMultiplier = 1.0)
     : SubController(name,master,conclass,level), levelMultiplier(_levelMultiplier)
   {}
   void receiveMidiControlMessage(int value){
-    setLevel (levelMultiplier * exponentialLookUpTable.getValueConcaveIncreasing (double(value)/(127.0)));
+    setLevel (levelMultiplier * exponentialLookUpTable.getValueConcaveIncreasing (StkFloat(value)/(127.0)));
     //    cout << "New concave exponential level=" << level << endl;
   }   
   int generateMidiControlMessageValue () {
@@ -365,29 +369,29 @@ class SubControllableLevelConcaveIncreasing: public SubController
   }
 
  private:
-  double levelMultiplier;
+  StkFloat levelMultiplier;
 };
 
 
 class SubControllableLevelLinear: public SubController
 {
  public:
-  SubControllableLevelLinear (string name,RMasterController master, string conclass, double level=0.0, double _min = 0.0, double _max = 1.0)
+  SubControllableLevelLinear (string name,RMasterController master, string conclass, StkFloat level=0.0, StkFloat _min = 0.0, StkFloat _max = 1.0)
     : SubController(name, master,conclass,level), maxLevel(_max),minLevel(_min)
   {}
 
 
   void receiveMidiControlMessage(int value){
-    setLevel (minLevel + (maxLevel-minLevel)*double(value)/(127.0));
-    cout << "New linear level=" << getLevel() << endl;
+    setLevel (minLevel + (maxLevel-minLevel)*StkFloat(value)/(127.0));
+    //    cout << "New linear level=" << getLevel() << endl;
   }   
   int generateMidiControlMessageValue () {
     return (int)((getLevel()-minLevel) *127.0/(maxLevel-minLevel));
   }
 
  private:
-  double maxLevel;
-  double minLevel;
+  StkFloat maxLevel;
+  StkFloat minLevel;
 };
 
 
@@ -399,21 +403,22 @@ class ControllerNormalSweep : public AMasterController
 {
  public:
 
-  ControllerNormalSweep (string name, vector<RController> & _controllers, double level, double _levelMultiplier=1.0)
+  ControllerNormalSweep (string name, vector<RController> & _controllers, StkFloat level, StkFloat _levelMultiplier=1.0)
     : AMasterController(name,level), levelMultiplier(_levelMultiplier), controllers(_controllers), previousChanges(16,0.0)
   {
     variables["wd"] = 1.0;
     variables["frq"] = 1.0;
   }
   
-  bool receiveLevelFromSubController (string & conclass, double level) {
+  bool receiveLevelFromSubController (string & conclass, StkFloat level) {
+    //    cout << "Master received level "<< level << " from " << conclass << endl;
     variables[conclass] = level;
     updateControllers ();
     return true;
   }
 
   void receiveMidiControlMessage(int value){
-    setLevel (levelMultiplier * exponentialLookUpTable.getValueConcaveIncreasing (double(value)/(127.0)));
+    setLevel (levelMultiplier * exponentialLookUpTable.getValueConcaveIncreasing (StkFloat(value)/(127.0)));
     updateControllers();
   }
 
@@ -422,43 +427,49 @@ class ControllerNormalSweep : public AMasterController
 
   }
 
+  void postLoadUpdate() {
+    //    cout << "Updating controllers" << endl;
+    updateControllers();
+  }
+
   void updateControllers ()  {
 
-    double freq = variables["frq"]; 
-    double width = variables["wd"];
-    double noise = variables["ns"];
-    double mf1 = 1.0/sqrt(2.0*width*width*local_pi);
-    double mf2 = 1.0/(2.0*width*width);
+    StkFloat freq = variables["frq"]; 
+    StkFloat width = variables["wd"];
+    StkFloat noise = variables["ns"];
+    StkFloat mf1 = 1.0/sqrt(2.0*width*width*local_pi);
+    StkFloat mf2 = 1.0/(2.0*width*width);
     
-    double level = getLevel();
+    StkFloat level = getLevel();
 
-    cout << "level="<<level<<", freq="<<freq<<", width="<<width<< endl;
+    //    cout << "level="<<level<<", freq="<<freq<<", width="<<width<< endl;
 
 
-
-    for (int i = 0; i<16; i++) {
-      double xval = (double)i-freq;
-      double thisval = level*mf1*exp(-xval*xval*mf2);
-      double noiseval = thisval;
-      if (noise>0) {
+    int counter = 0;
+    for (auto controller: controllers) {
+      StkFloat xval = (StkFloat)counter-freq;
+      StkFloat thisval = level*mf1*exp(-xval*xval*mf2);
+      StkFloat noiseval = thisval;
+      if (noise>0 && thisval>1e-6) {
 	gen_type gen(RNGGEN, lognormal_distribution_type (thisval, noise));
 	noiseval = gen();
       }
-      cout << thisval << " ";
-      controllers[i]->setAdjustment(noiseval);
+      //      cout << thisval << " " << noiseval;
+      controller->setAdjustment(noiseval);
+      counter ++;
     }
-    cout << endl;
+    //    cout << endl;
   
 
   }
 
  private:
 
-  double levelMultiplier;
-  map<string,double> variables;
+  StkFloat levelMultiplier;
+  map<string,StkFloat> variables;
   vector<RController> controllers;
 
-  vector<double> previousChanges;
+  vector<StkFloat> previousChanges;
 
 };
 
@@ -482,10 +493,13 @@ class ControllerSet
     controllers[kc] = controller;
   }
 
-  ControllerSet ()  {
+  ControllerSet (int numPartials)  {
 
-    RController volume (new ControllableLevelLinear ("masterVolume",0.1,0.0,1.0));
+    RController volume (new ControllableLevelConcaveIncreasing ("masterVolume",0.1));
+    RController pan (new ControllableLevelLinear ("pan",0.5));
     addController (volume,16,0);
+    addController (pan,16,1);
+
 
     RController attack (new ControllableLevelLinear ("masterAttack",1.0,0.01,3.0));
     addController (attack,17,0);
@@ -496,10 +510,39 @@ class ControllerSet
     RController release (new ControllableLevelLinear ("masterRelease",2.0,0.01,10.0));
     addController (release,17,3);
 
+    RController chorusModDepth (new ControllableLevelLinear ("chorusModDepth"));
+    RController chorusModFrequency (new ControllableLevelLinear ("chorusModFrequency"));
+    RController chorusMix (new ControllableLevelLinear ("chorusMix",0.0));
+
+    RController echoDelay (new ControllableLevelLinear ("echoDelay",48000/4,1,48000*5));
+    RController echoFeedback (new ControllableLevelLinear ("echoFeedback",0.3));
+    RController echoMix (new ControllableLevelLinear ("echoMix",0.0));
+
+    RController reverbRoomSize (new ControllableLevelLinear ("reverbRoomSize",0.75));
+    RController reverbDamping (new ControllableLevelLinear ("reverbDamping",0.25));
+    RController reverbWidth (new ControllableLevelLinear ("reverbWidth",1.0));
+    RController reverbMix (new ControllableLevelLinear ("reverbMix",0.0));
+
+
+    addController (chorusMix,19,0);
+    addController (chorusModDepth,19,1);
+    addController (chorusModFrequency,19,2);
+
+
+    addController (echoMix,20,0);
+    addController (echoDelay,20,1);
+    addController (echoFeedback,20,2);
+  
+    addController (reverbMix,21,0);
+    addController (reverbRoomSize,21,1);
+    addController (reverbDamping,21,2);
+    addController (reverbWidth,21,3);
+
+
 
     vector<RController> partialLevels;
 
-    for (int i = 0; i<16; i++) {
+    for (int i = 0; i<numPartials; i++) {
 
       RControllableFrequencyMultiplier freqMult (new ControllableFrequencyMultiplier (getColumnName("freqMult",i),1.0*(i+1)));
       addController (freqMult.GetPointer(),i,0);
@@ -615,10 +658,24 @@ class ControllerSet
     string line;
     while (getline (instr,line)) {
       string cname;
-      double value;
+      StkFloat value;
       stringstream(line) >> cname >> value;
-      controllerNames[cname]->setLevel (value);
+      RController con = controllerNames[cname];
+      if (con)
+	con->setLevel (value);
     }
+    for (auto conandname:controllerNames) {
+      conandname.second->postLoadUpdate();
+    }
+  }
+
+  void outputControllersToConsole () {
+    for (auto controller:controllerNames) {
+      cout << controller.first << " " 
+	   << controller.second->getLevel() 
+	   << " "  << controller.second->getOutputLevel() 
+	   << endl;
+    }   
   }
 
 };
@@ -660,7 +717,7 @@ class MorphControllerSet
     }
   }
 
-  void morphOutput (double value) {
+  void morphOutput (StkFloat value) {
     if (value > 1 || value < 0) {
       cerr << "Inappropriate morph value" << endl;
       throw "bla";
@@ -668,7 +725,7 @@ class MorphControllerSet
     cout << "Morph " << value << endl;
       
     for (unsigned int i = 0; i< outcontrollers.size(); i++) {
-      double newLevel = (1.0-value)*in1[i]->getLevel() + value*in2[i]->getLevel();
+      StkFloat newLevel = (1.0-value)*in1[i]->getLevel() + value*in2[i]->getLevel();
       outcontrollers[i]->setLevel(newLevel);
     }
   }

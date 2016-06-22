@@ -1,17 +1,19 @@
 #include "synthesiser.h"
 
 
-PolySynthesiser::PolySynthesiser (int numPartials, int numPhones) 
-  : recording("recording")
+PolySynthesiser::PolySynthesiser (int _numPartials, int _numPhones) 
+  : numPartials(_numPartials), numPhones(_numPhones),
+    controlSet (RControllerSet (new ControllerSet(numPartials))),  
+    fx(controlSet), recording("recording")
 {
-  controlSet = RControllerSet (new ControllerSet());
-  
-  masterVolume = controlSet->getController("masterVolume");
+
+
+  RController  volume = controlSet->getController("masterVolume");
 
   
   for (int i = 0; i<numPhones; i++) {
     
-    RPhone phone (new Phone (controlSet, masterVolume,numPartials));
+    RPhone phone (new Phone (controlSet, volume,numPartials));
     phones.push_back(phone);
     
     //    if (i == 0)
@@ -48,8 +50,8 @@ void PolySynthesiser::loadMorph(string fname1, string fname2) {
   lock();
   morphSet = RMorphControllerSet(new MorphControllerSet);
   morphSet->outputSet = controlSet;
-  morphSet->inputSet1 = RControllerSet(new ControllerSet);
-  morphSet->inputSet2 = RControllerSet(new ControllerSet);
+  morphSet->inputSet1 = RControllerSet(new ControllerSet(numPartials));
+  morphSet->inputSet2 = RControllerSet(new ControllerSet(numPartials));
   morphSet->inputSet1->load (fname1);
   morphSet->inputSet2->load (fname2);
   morphSet->initControlVectors();
@@ -68,7 +70,13 @@ void PolySynthesiser::interpretControlMessage (KnobController con, int val) {
   unlock();
 }
 
+const vector<RPhone> & PolySynthesiser::getPhones() {
+  return phones;
+}
+
 void PolySynthesiser::playToBuffer (RBufferWithMutex buffer) {
+  throw ("No longer implemented");
+  #if 0
   lock();
   t = buffer->timeStart;
   if (t<0)
@@ -87,9 +95,10 @@ void PolySynthesiser::playToBuffer (RBufferWithMutex buffer) {
   unlock();
   
   
+#endif
 }
 
-void PolySynthesiser::noteOn (int noteVal, int velocity) {
+void PolySynthesiser::noteOn (int noteVal, int velocity, double timePoint) {
   //  cout << "note on" << endl;
   if (noteVal < 0 || noteVal > 255) {
     return;
@@ -100,13 +109,17 @@ void PolySynthesiser::noteOn (int noteVal, int velocity) {
     double earliest = 1e9;
     int phoneIndex = -1;
     for (size_t i = 0;i<timePhoneStarted.size(); i++) {
-      cout << timePhoneStarted[i] << " ";
-      if (timePhoneStarted[i]<earliest) {
-	earliest = timePhoneStarted[i];
+      //      cout << timePhoneStarted[i] << " ";
+      double thistime = timePhoneStarted[i];
+      if (noteBeingPlayed[ phones[i] ] >0) {
+	thistime += 1e8;
+      }
+      if (thistime<earliest) {
+	earliest = thistime;
 	phoneIndex = i;
       }
     }
-    cout << phoneIndex << endl;
+    //    cout << endl << "Playing on: " << phoneIndex << endl;
     
     RPhone phone = phones[phoneIndex];
     
@@ -114,22 +127,22 @@ void PolySynthesiser::noteOn (int noteVal, int velocity) {
     
     notesOn[noteVal] = phone;
     noteBeingPlayed[phone] = noteVal;
-    timePhoneStarted[phoneIndex] = t;
+    timePhoneStarted[phoneIndex] = timePoint;
     
-    phone->phoneEnvelope->noteOn(t, (double)velocity/127.0);
+    phone->phoneEnvelope->noteOn(timePoint, (double)velocity/127.0);
     phone->masterNote->receiveMidiControlMessage(noteVal);
   }
   unlock();
 }
 
-void PolySynthesiser::noteOff (int noteVal, int velocity) {
+void PolySynthesiser::noteOff (int noteVal, int velocity, double timePoint) {
   if (noteVal <0 || noteVal > 255)
     return;
   lock();
   if (notesOn[noteVal]) {
     RPhone phone = notesOn[noteVal];
     noteBeingPlayed[phone] = 0;
-    phone->phoneEnvelope->noteOff(t);
+    phone->phoneEnvelope->noteOff(timePoint);
     notesOn[noteVal] = 0;
   }
   unlock();

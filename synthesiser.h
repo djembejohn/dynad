@@ -5,6 +5,9 @@
 #include "envelope.h"
 #include "oscillator.h"
 #include "bcr2000Driver.h"
+#include "FreeVerb.h"
+#include "Echo.h"
+#include "Chorus.h"
 
 using namespace std;
 using namespace jab;
@@ -28,17 +31,20 @@ public:
 
   Partial (RController _masterVolume, RController level, RController noteFrequency, RController frequencyMultiplier, RController frequencyNoise = 0, RController distortion = 0, RController squareshape = 0, RController sawshape = 0)
     : oscillator (level, frequencyMultiplier, noteFrequency, frequencyNoise, distortion, squareshape, sawshape),
-    masterVolume(_masterVolume),timeCounter(0.0)
+    masterVolume(_masterVolume)
     {}
     
   void playToThreadSafeBuffer(RBufferWithMutex threadSafeBuffer) {
     //    cout << "partial " << threadSafeBuffer->timeStart 
     //	 << " " << threadSafeBuffer->numberOfFrames
     //	 << " " << threadSafeBuffer->sampleRate << endl;
+
     const size_t subBufferIncrement=256;
-    //    double timeCounter = threadSafeBuffer->timeStart;
+
+    double internalTimeCounter = threadSafeBuffer->timeStart;
     double sampleRate = threadSafeBuffer->sampleRate;
     int numChannels = threadSafeBuffer->numberOfChannels;
+
     vector<StkFloat> subBuffer (subBufferIncrement*numChannels,0.0);
     size_t bufferNumFrames = threadSafeBuffer->numberOfFrames;
 
@@ -47,7 +53,7 @@ public:
       if (i+subBufferIncrement > bufferNumFrames) {
 	thisBufferNumFrames = bufferNumFrames-i;
       }
-      playToBuffer(subBuffer,sampleRate,thisBufferNumFrames,numChannels,timeCounter);
+      playToBuffer(subBuffer,sampleRate,thisBufferNumFrames,numChannels,internalTimeCounter);
       threadSafeBuffer->lock();
       safeVector<StkFloat> & outbuf = threadSafeBuffer->getOutBufRef();
       for (size_t j = 0; j<thisBufferNumFrames*numChannels; j++) {
@@ -55,8 +61,9 @@ public:
 	outbuf[i*numChannels+j] = value;
 	subBuffer[j] = 0;
       }
+      internalTimeCounter += (double)thisBufferNumFrames/sampleRate;
+      //      cout << internalTimeCounter << endl;
       threadSafeBuffer->unlock();
-      timeCounter += (double)thisBufferNumFrames/sampleRate;
     }
     //    timeCounter += (double)bufferNumFrames/sampleRate;
 
@@ -82,36 +89,6 @@ public:
   }
 
 
-#if 0
-  void PlayToWave (Wave & wave, double start=0) 
-  {
-    size_t buffInc = start*wave.sampleRate;
-    double maxrel = 0;
-    for (auto & env:envelopes) {
-      maxrel = max(env.release,maxrel);
-    }
-    
-    for (unsigned int i = 0; i<(noteLength+maxrel)*wave.sampleRate; i++) {
-      double timePoint = double(i)/wave.sampleRate;
-      double level = 1;
-      for (auto & osc:amp_oscillators) {
-	level = level + osc.getValue(timePoint);
-      }
-      for (auto & env:envelopes) {
-	level = level * env.getLevel(timePoint,noteLength);
-      }
-      double value = oscillator.getValue(timePoint);
-
-      if (i+buffInc > wave.buffer.size()) {
-	cerr << "Error writing past the end of the wave buffer." << endl;
-	break;
-      }
-      wave.buffer[i+buffInc] += value * level;
-    }
-  }
-
-#endif
-
   
  private:
 
@@ -123,21 +100,23 @@ public:
       //      for (auto & osc:amp_oscillators) {
       //	level = level + osc.getValue(timePoint);
       //      }
-      StkFloat value = oscillator.getValue(timePoint);
-      
-      if (value!=0.0) {
-	level = level * masterVolume->getLevel();
-	for (auto & env:envelopes) {
-	  level = level * env->getLevel(timePoint);
-	}
-      }
+
+      for (auto & env:envelopes) 
+	level = level * env->getBufferedLevel(timePoint);
+      StkFloat value = 0.0;
+      if (level > 0.0) 
+	value = oscillator.getValue(timePoint);
+
       // must implement pan ;)
-      for (int j = 0; j<numChannels; j++)
-	buffer[i*numChannels+j] += value * level;
+      if (value*level != 0.0) 
+	for (int j = 0; j<numChannels; j++)
+	  buffer[i*numChannels+j] += value * level;
+
+
     }
   }
 
-  double timeCounter;
+  //  double timeCounter;
 
 };
 
@@ -252,11 +231,19 @@ class Phone
  
   void playToBuffer (RBufferWithMutex buffer) {
     // the first partial is assumed to be the root
-    RPartial firstPartial = *partials.begin();
+    //    RPartial firstPartial = *partials.begin();
 
-    RPartialsList plist = RPartialsList(new PartialsList());
+    if (!phoneEnvelope->isPlaying())
+      return;
+
+    // Set up the envelope
+    double tStart = buffer->timeStart;
+    double tInc = 1.0/(double)(buffer->sampleRate);
+    double tEnd = tStart +tInc*(double)buffer->numberOfFrames;
+    phoneEnvelope->prepareBuffer (tStart,tEnd,tInc);
+
     for (auto partial:partials) {
-      plist->partials.push_back(partial);
+     partial->playToThreadSafeBuffer (buffer);
     }
 
 #if 0
@@ -291,7 +278,7 @@ class Phone
     //    group.create_thread  ( boost::bind (&ThreadedPartialPlayer::threadedFunction, &threadplayer4));
     group.join_all();
 
-#else    
+#elif 0    
     ThreadedPartialPlayer threadplayer1(plist,buffer);
     threadplayer1.threadedFunction();
 #endif
@@ -303,6 +290,60 @@ class Phone
 };
 
 typedef shared_ptr<Phone> RPhone;
+
+typedef pair<RPhone,RBufferWithMutex> PhoneBufferPair;
+ 
+class PhonesBuffersList : public boost::mutex
+{
+ public:
+
+  void addPair (RPhone phone,RBufferWithMutex buffer) {
+    phoneBuffers.push_back (PhoneBufferPair (phone,buffer));
+  }
+
+  PhoneBufferPair popFirst() {
+    pair<RPhone,RBufferWithMutex> thisPair;
+    lock();
+    list<PhoneBufferPair>::iterator pi = phoneBuffers.begin();
+    if (pi != phoneBuffers.end()) {
+      thisPair = *pi;
+      phoneBuffers.pop_front();
+    }
+    unlock();
+    return thisPair;
+  }
+ private:
+  list<PhoneBufferPair > phoneBuffers;
+};
+
+typedef shared_ptr<PhonesBuffersList> RPhonesBuffersList;
+
+class ThreadedPhonePlayer
+{
+ public:
+  ThreadedPhonePlayer (RPhonesBuffersList _phoneBufferList)
+    : phonesBuffersList (_phoneBufferList)
+    {}
+  
+  void threadedFunction() {
+    int counter = 0;
+    bool finished = false;
+    while (!finished) {
+      PhoneBufferPair thispair = phonesBuffersList->popFirst();
+      if (thispair.first && thispair.second) {
+	thispair.first->playToBuffer(thispair.second);
+	counter ++;
+      }
+      else 
+	finished = true;
+    }
+  }
+    
+  RPhonesBuffersList phonesBuffersList;
+
+};
+
+
 
 class MonoSynthesiser
 {
@@ -317,7 +358,7 @@ class MonoSynthesiser
 
   MonoSynthesiser () 
     :numNotesOn (0), notesOn (256,0) {
-    controlSet = RControllerSet (new ControllerSet());
+    controlSet = RControllerSet (new ControllerSet(16));
 
     KnobController cvar_volume (16, 0);
     RController volume (new ControllableLevelLinear ("masterVolume",0.1));
@@ -388,14 +429,64 @@ class MonoSynthesiser
 
 };
 
+class FX
+{
+public:
+  FX (RControllerSet controlSet)
+    : echo (48000*5),
+    chorusModDepth (controlSet->getController("chorusModDepth")),
+    chorusModFrequency (controlSet->getController("chorusModFrequency")),
+    chorusMix (controlSet->getController("chorusMix")),
+    echoDelay (controlSet->getController("echoDelay")),
+    echoFeedback (controlSet->getController("echoFeedback")),
+    echoMix (controlSet->getController("echoMix")),
+    reverbRoomSize (controlSet->getController("reverbRoomSize")),
+    reverbDamping (controlSet->getController("reverbDamping")),
+    reverbWidth (controlSet->getController("reverbWidth")),
+    reverbMix (controlSet->getController("reverbMix"))
+      {}
+
+  Chorus chorus;
+  Echo echo;
+  FreeVerb reverb;
+
+  void updateFXFromControllers () {    
+    chorus.setModDepth(chorusModDepth->getLevel());
+    chorus.setModFrequency(chorusModFrequency->getLevel());
+
+    echo.setDelay(echoDelay->getLevel());
+  
+    reverb.setRoomSize(reverbRoomSize->getLevel());
+    reverb.setDamping(reverbDamping->getLevel());
+    reverb.setWidth(reverbWidth->getLevel());
+  }
+
+  RController chorusModDepth;
+  RController chorusModFrequency;
+  RController chorusMix;
+  
+  RController echoDelay;
+  RController echoFeedback;
+  RController echoMix;
+  
+  RController reverbRoomSize;
+  RController reverbDamping;
+  RController reverbWidth;
+  RController reverbMix;
+
+};
+
+
 class PolySynthesiser : public boost::mutex
 {
  public:
+  int numPartials;
+  int numPhones;
+
   RControllerSet controlSet;
   RMorphControllerSet morphSet;
-  RController masterVolume;
 
-  double t = 0;
+  FX fx;
 
   ofstream recording;
 
@@ -411,9 +502,10 @@ class PolySynthesiser : public boost::mutex
   void load(string filename);
   void loadMorph(string fname1, string fname2);
   void interpretControlMessage (KnobController con, int val);
+  const vector<RPhone> & getPhones();
   void playToBuffer (RBufferWithMutex buffer);
-  void noteOn (int noteVal, int velocity);
-  void noteOff (int noteVal, int velocity);
+  void noteOn (int noteVal, int velocity, double timePoint);
+  void noteOff (int noteVal, int velocity, double timePoint);
   void updateController(); 
 };
 

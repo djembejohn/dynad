@@ -8,7 +8,6 @@
 #include "synthesiser.h"
 
 #include "Stk.h"
-#include "JCRev.h"
 #include "RtAudio.h"
 #include "RtError.h"
 
@@ -16,9 +15,10 @@
 #include <boost/bind.hpp>
 #include <boost/function.hpp>
 
-ofstream envelopelog ("envelope.log");
+ofstream mainlog ("main.log");
 
-JCRev   prcrev;
+
+
 BCR2000Driver bcr2000Driver;
 
 using namespace stk;
@@ -52,11 +52,15 @@ public:
   shared_ptr<RtAudio> audioOut;
   unsigned int bufsize = 512;
 
+  double timePoint;
+
   bool finished;
   bool pause;
 
   MainApplication () 
-    : sampleRate (48000), numChannels (2), finished(false),pause(false) {
+    : sampleRate (48000), numChannels (2), 
+      timePoint (0.0),
+      finished(false),pause(false) {
     synths[0] = RPolySynthesiser(new PolySynthesiser(16,6));
     focalSynth = synths[0];
   }
@@ -68,8 +72,6 @@ public:
     cout << "Initialising Midi input" << endl;
     if (setupMidi())
       throw "Error";
-    prcrev.setT60(5.0);
-    prcrev.setEffectMix(1.0);
   }
   void run() {
     
@@ -107,6 +109,11 @@ public:
 
       if (input[0] == 'q')
 	finished = true;
+
+      if (input[0] == 'o') {
+	focalSynth->controlSet->outputControllersToConsole();
+      }
+
       if (input[0] == 's') {
 	if (input.size() > 3) {
 	  focalSynth->save (input.substr(2));
@@ -308,7 +315,7 @@ int rtaudio_callback(
 {
   (void)inbuf;
   
-  //  cout << "audio " << streamtime << endl;
+  mainlog << "audio " << streamtime << ", " << status << endl;
 
   MainApplication * mainapp = (MainApplication *)data;
   
@@ -318,8 +325,12 @@ int rtaudio_callback(
     //  }
 
 
-  vector<RBufferWithMutex> buffers;
+  typedef pair<RBufferWithMutex,RPolySynthesiser> RBuffSynthPair;
+
+  vector<RBuffSynthPair> buffersandsynths;
   boost::thread_group group;
+
+  RPhonesBuffersList phonesBuffers (new PhonesBuffersList);
 
   for (auto synthmidichannelpair:mainapp->synths) {
 
@@ -328,48 +339,113 @@ int rtaudio_callback(
 
       RBufferWithMutex buffer (new BufferWithMutex<>
 			       (
-				streamtime,
+				mainapp->timePoint,
 				mainapp->sampleRate,
 				nFrames,
 				mainapp->numChannels
 				)
 			     );
-      buffers.push_back(buffer);
-      auto bindoperation = boost::bind (&PolySynthesiser::playToBuffer, rsynth, buffer);
-      group.create_thread  (bindoperation);
+      buffersandsynths.push_back(RBuffSynthPair(buffer,rsynth));
+      
+      for (auto phone:rsynth->getPhones()) {
+	phonesBuffers->addPair (phone,buffer);
+      }
+      
+      
+      //      auto bindoperation = boost::bind (&PolySynthesiser::playToBuffer, rsynth, buffer);
+      //      group.create_thread  (bindoperation);
     }
   }
+
+#if 1
+  ThreadedPhonePlayer phonePlayer1 (phonesBuffers);
+  ThreadedPhonePlayer phonePlayer2 (phonesBuffers);
+  ThreadedPhonePlayer phonePlayer3 (phonesBuffers);
+  ThreadedPhonePlayer phonePlayer4 (phonesBuffers);
+  group.create_thread(boost::bind (&ThreadedPhonePlayer::threadedFunction,&phonePlayer1));
+  group.create_thread(boost::bind (&ThreadedPhonePlayer::threadedFunction,&phonePlayer2));
+  group.create_thread(boost::bind (&ThreadedPhonePlayer::threadedFunction,&phonePlayer3));
+  group.create_thread(boost::bind (&ThreadedPhonePlayer::threadedFunction,&phonePlayer4));
   group.join_all();
+#else
+  ThreadedPhonePlayer phonePlayer1 (phonesBuffers);
+  
+  phonePlayer1.threadedFunction();
+#endif
+    
+
+  mainapp->timePoint += (double)nFrames/mainapp->sampleRate;
+
   //  cout << buffer->numberOfChannels << " " 
   //       << buffer->numberOfFrames << " " 
   //       << outbuf << endl;
-
 
   int numberOfChannels = mainapp->numChannels;
 
   //  cout << "buffer done" << endl;
   int counter = 0;
-  for (auto buffer: buffers) {
-    double effectsMix = 0.0;
+  for (auto bufferandsynth: buffersandsynths) {
+    RBufferWithMutex buffer = bufferandsynth.first;
+    RPolySynthesiser synth = bufferandsynth.second;
+
+    synth->fx.updateFXFromControllers();
+
+    double volume = synth->controlSet->controllerNames["masterVolume"]->getLevel();
+    double pan = synth->controlSet->controllerNames["pan"]->getLevel();
 
     safeVector<StkFloat> & synthbuf = buffer->getOutBufRef();
     StkFloat * outsamples = (StkFloat *)outbuf;
     for (unsigned int i=0;i<nFrames*numberOfChannels; i+=numberOfChannels) {
-      double inval = synthbuf[i];
+      double lval = synthbuf[i];
+      double rval = lval;
       if (numberOfChannels > 1) 
-	inval = (inval +synthbuf[i+1])*0.5;
-      prcrev.tick( inval,numberOfChannels);
-      const StkFrames& samples = prcrev.lastFrame();
+	rval = synthbuf[i+1];
+
+      double cmix =synth->fx.chorusMix->getLevel(); 
+      if (cmix > 0.0) {
+	double inval = (rval+lval)/2.0;
+	synth->fx.chorus.tick(inval);
+	const StkFrames& samples = synth->fx.chorus.lastFrame();
+	
+	lval = (1-cmix)*lval+cmix*samples[0];
+	rval = (1-cmix)*rval+cmix*samples[1];
+      }
+
+      double emix = synth->fx.echoMix->getLevel();
+      if (emix >0.0) {
+	double inval = (rval+lval)/2.0;
+	inval += synth->fx.echo.lastFrame()[0]*synth->fx.echoFeedback->getLevel();
+	synth->fx.echo.tick(inval);
+      
+	const StkFrames& samples = synth->fx.echo.lastFrame();
+
+	lval = (1-emix)*lval+emix*samples[0];
+	rval = (1-emix)*rval+emix*samples[0];
+      }
+
+      double rmix = synth->fx.reverbMix->getLevel();
+      if (rmix > 0.0) {
+	synth->fx.reverb.tick(rval,lval);
+	const StkFrames& samples = synth->fx.reverb.lastFrame();
+	lval = (1-rmix)*lval+rmix*samples[0];
+	rval = (1-rmix)*rval+rmix*samples[1];
+      }
+
+      lval = lval*volume*(1.0-pan)*2.0;
+      rval = rval*volume*pan*2.0;
+
       if (counter == 0) {
-	outsamples[i] = (1-effectsMix)*synthbuf[i]+effectsMix*samples[0];
+	outsamples[i] = lval;
 	if (numberOfChannels>1) 
-	  outsamples[i+1] = (1-effectsMix)*synthbuf[i+1]+effectsMix*samples[1];
+	  outsamples[i+1] = rval;
       }
       else {
-	outsamples[i] += (1-effectsMix)*synthbuf[i]+effectsMix*samples[0];
+	outsamples[i] += lval;
 	if (numberOfChannels>1) 
-	  outsamples[i+1] += (1-effectsMix)*synthbuf[i+1]+effectsMix*samples[1];
+	  outsamples[i+1] += rval;
       }
+
+     
 
     }
     counter ++;
@@ -389,7 +465,7 @@ void midiCallback( double deltatime, std::vector< unsigned char > *message, void
   int byte2 = 0;
 
   for ( unsigned int i=0; i<nBytes; i++ ) {
-    std::cout << "Byte " << i << " = " << (int)message->at(i) << ", ";
+    //    std::cout << "Byte " << i << " = " << (int)message->at(i) << ", ";
     if (i == 0)
       byte0 = (int)message->at(i);
     if (i == 1)
@@ -398,8 +474,8 @@ void midiCallback( double deltatime, std::vector< unsigned char > *message, void
       byte2 = (int)message->at(i);
   }
  
-  if ( nBytes > 0 )
-    std::cout << "stamp = " << deltatime << std::endl;
+  //  if ( nBytes > 0 )
+  //    std::cout << "stamp = " << deltatime << std::endl;
 
   MainApplication * myclass = (MainApplication *)classptr;
 
@@ -410,15 +486,15 @@ void midiCallback( double deltatime, std::vector< unsigned char > *message, void
     int channelNumber = byte0-144;
     if (myclass->synths[channelNumber]){
       if (byte2 == 0)
-	myclass->synths[channelNumber]->noteOff (byte1,byte2);
+	myclass->synths[channelNumber]->noteOff (byte1,byte2,myclass->timePoint);
       else 
-	myclass->synths[channelNumber]->noteOn (byte1,byte2);
+	myclass->synths[channelNumber]->noteOn (byte1,byte2,myclass->timePoint);
     }
   }
   else if (byte0 > 127 && byte0<144) {
     int channelNumber = byte0-128;
     if (myclass->synths[channelNumber])
-      myclass->synths[channelNumber]->noteOff (byte1,byte2);
+      myclass->synths[channelNumber]->noteOff (byte1,byte2,myclass->timePoint);
   }
   else {
     ControlVariable cvar(byte0,byte1);

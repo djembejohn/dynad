@@ -183,6 +183,30 @@ controller.cpp.s:
 	$(MAKE) -f CMakeFiles/johnsynth.dir/build.make CMakeFiles/johnsynth.dir/controller.cpp.s
 .PHONY : controller.cpp.s
 
+envelope.o: envelope.cpp.o
+.PHONY : envelope.o
+
+# target to build an object file
+envelope.cpp.o:
+	$(MAKE) -f CMakeFiles/johnsynth.dir/build.make CMakeFiles/johnsynth.dir/envelope.cpp.o
+.PHONY : envelope.cpp.o
+
+envelope.i: envelope.cpp.i
+.PHONY : envelope.i
+
+# target to preprocess a source file
+envelope.cpp.i:
+	$(MAKE) -f CMakeFiles/johnsynth.dir/build.make CMakeFiles/johnsynth.dir/envelope.cpp.i
+.PHONY : envelope.cpp.i
+
+envelope.s: envelope.cpp.s
+.PHONY : envelope.s
+
+# target to generate assembly for a file
+envelope.cpp.s:
+	$(MAKE) -f CMakeFiles/johnsynth.dir/build.make CMakeFiles/johnsynth.dir/envelope.cpp.s
+.PHONY : envelope.cpp.s
+
 main.o: main.cpp.o
 .PHONY : main.o
 
@@ -249,6 +273,9 @@ help:
 	@echo "... controller.o"
 	@echo "... controller.i"
 	@echo "... controller.s"
+	@echo "... envelope.o"
+	@echo "... envelope.i"
+	@echo "... envelope.s"
 	@echo "... main.o"
 	@echo "... main.i"
 	@echo "... main.s"
