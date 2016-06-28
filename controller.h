@@ -2,6 +2,7 @@
 #include "buffer.h"
 #include "countedMutex.h"
 #include <boost/math/distributions/lognormal.hpp>
+#include <boost/math/distributions/poisson.hpp>
 #include <fstream>
 
 using namespace std;
@@ -404,10 +405,11 @@ class ControllerNormalSweep : public AMasterController
  public:
 
   ControllerNormalSweep (string name, vector<RController> & _controllers, StkFloat level, StkFloat _levelMultiplier=1.0)
-    : AMasterController(name,level), levelMultiplier(_levelMultiplier), controllers(_controllers), previousChanges(16,0.0)
+    : AMasterController(name,level), levelMultiplier(_levelMultiplier), controllers(_controllers)
   {
     variables["wd"] = 1.0;
     variables["frq"] = 1.0;
+    variables["ns"] = 0.0;
   }
   
   bool receiveLevelFromSubController (string & conclass, StkFloat level) {
@@ -469,7 +471,133 @@ class ControllerNormalSweep : public AMasterController
   map<string,StkFloat> variables;
   vector<RController> controllers;
 
-  vector<StkFloat> previousChanges;
+
+};
+
+
+class ControllerPoissonSweep : public AMasterController
+{
+ public:
+
+  ControllerPoissonSweep (string name, vector<RController> & _controllers, StkFloat level, StkFloat _levelMultiplier=1.0)
+    : AMasterController(name,level), levelMultiplier(_levelMultiplier), controllers(_controllers)
+  {
+    variables["lambda"] = 1.0;
+  }
+  
+  bool receiveLevelFromSubController (string & conclass, StkFloat level) {
+    //    cout << "Master received level "<< level << " from " << conclass << endl;
+    variables[conclass] = level;
+    updateControllers ();
+    return true;
+  }
+
+  void receiveMidiControlMessage(int value){
+    setLevel (levelMultiplier * exponentialLookUpTable.getValueConcaveIncreasing (StkFloat(value)/(127.0)));
+    updateControllers();
+  }
+
+  int generateMidiControlMessageValue () {
+    return (int)(exponentialLookUpTable.getInverseValueConcaveIncreasing(getLevel()/levelMultiplier)*127);
+
+  }
+
+  void postLoadUpdate() {
+    //    cout << "Updating controllers" << endl;
+    updateControllers();
+  }
+
+  void updateControllers ()  {
+
+    StkFloat lambda = variables["lambda"]; 
+    
+    StkFloat level = getLevel();
+
+    //    cout << "level="<<level<<", freq="<<freq<<", width="<<width<< endl;
+
+
+    int counter = 0;
+    boost::math::poisson_distribution<> poisson (lambda);
+    for (auto controller: controllers) {
+      StkFloat xval = (StkFloat)counter;
+      
+      StkFloat thisval = level*boost::math::pdf(poisson,xval);
+      //      cout << thisval << " " << noiseval;
+      controller->setAdjustment(thisval);
+      counter ++;
+    }
+    //    cout << endl;
+  
+
+  }
+
+ private:
+
+  StkFloat levelMultiplier;
+  map<string,StkFloat> variables;
+  vector<RController> controllers;
+
+
+};
+
+
+class ControllerFrequencyAdjuster : public AMasterController
+{
+ public:
+
+  ControllerFrequencyAdjuster (string name, vector<RController> & _controllers, StkFloat level, StkFloat _levelMultiplier=1.0)
+    : AMasterController(name,level), levelMultiplier(_levelMultiplier), controllers(_controllers)
+  {
+    //    variables["wd"] = 1.0;
+  }
+  
+  bool receiveLevelFromSubController (string & conclass, StkFloat level) {
+    //    cout << "Master received level "<< level << " from " << conclass << endl;
+    variables[conclass] = level;
+    updateControllers ();
+    return true;
+  }
+
+  void receiveMidiControlMessage(int value){
+    setLevel (levelMultiplier * exponentialLookUpTable.getValueConcaveIncreasing (StkFloat(value)/(127.0)));
+    updateControllers();
+  }
+
+  int generateMidiControlMessageValue () {
+    return (int)(exponentialLookUpTable.getInverseValueConcaveIncreasing(getLevel()/levelMultiplier)*127);
+
+  }
+
+  void postLoadUpdate() {
+    //    cout << "Updating controllers" << endl;
+    updateControllers();
+  }
+
+  void updateControllers ()  {
+
+    // need to implement a sigmoid function for this so it can go
+    // negative
+    StkFloat amount = getLevel()+1.0;
+
+    for (auto controller: controllers) {
+      StkFloat freqmult = controller->getLevel();
+      
+      if (freqmult!=1.0) {
+	//	StkFloat newval = freqmult*amount;
+	//	controller->setAdjustment(newval-freqmult);
+	controller->setAdjustment(amount-1.0);
+      }
+    }
+    //    cout << endl;
+  
+
+  }
+
+ private:
+
+  StkFloat levelMultiplier;
+  map<string,StkFloat> variables;
+  vector<RController> controllers;
 
 };
 
@@ -524,28 +652,29 @@ class ControllerSet
     RController reverbMix (new ControllableLevelLinear ("reverbMix",0.0));
 
 
-    addController (chorusMix,19,0);
-    addController (chorusModDepth,19,1);
-    addController (chorusModFrequency,19,2);
+    addController (chorusMix,21,0);
+    addController (chorusModDepth,12,1);
+    addController (chorusModFrequency,21,2);
 
 
-    addController (echoMix,20,0);
-    addController (echoDelay,20,1);
-    addController (echoFeedback,20,2);
+    addController (echoMix,22,0);
+    addController (echoDelay,22,1);
+    addController (echoFeedback,22,2);
   
-    addController (reverbMix,21,0);
-    addController (reverbRoomSize,21,1);
-    addController (reverbDamping,21,2);
-    addController (reverbWidth,21,3);
-
-
+    addController (reverbMix,23,0);
+    addController (reverbRoomSize,23,1);
+    addController (reverbDamping,23,2);
+    addController (reverbWidth,23,3);
 
     vector<RController> partialLevels;
+    vector<RController> partialFrequencies;
 
     for (int i = 0; i<numPartials; i++) {
 
       RControllableFrequencyMultiplier freqMult (new ControllableFrequencyMultiplier (getColumnName("freqMult",i),1.0*(i+1)));
       addController (freqMult.GetPointer(),i,0);
+
+      partialFrequencies.push_back(RController(freqMult));
 
       RControllerConcaveIncreasing level (new ControllableLevelConcaveIncreasing (getColumnName("level",i),exp(-i),1.0));
       addController (level.GetPointer(),i,1);
@@ -584,6 +713,7 @@ class ControllerSet
     ControllerNormalSweep * conc = new ControllerNormalSweep ("normalSweep",partialLevels,0.0,5.0);
     RMasterController normalSweep (conc);
     addController(normalSweep.GetPointer(),18,0);
+
     RController freq (new SubControllableLevelLinear
 		      (
 		       "normalSweep_frq",
@@ -606,9 +736,28 @@ class ControllerSet
 			)
 		       );
     addController(noise,18,3);
+
+
+    ControllerFrequencyAdjuster * fadj = new ControllerFrequencyAdjuster ("freqAdj",partialFrequencies,0.0,5.0);
+    RMasterController freqAdj (fadj);
+    addController(freqAdj.GetPointer(),19,0);
+
+
+    ControllerPoissonSweep * pois = new ControllerPoissonSweep ("poissonSweep",partialLevels,0.0,5.0);
+    RMasterController poissonSweep (pois);
+    addController(poissonSweep.GetPointer(),19,2);
+
+    RController lambda (new SubControllableLevelLinear
+		      (
+		       "poissonSweep_lambda",
+		       poissonSweep, "lambda", 0.01,0.01,numPartials+5
+		       )
+		      );
+    addController(lambda,19,3);
+
     
-    for (auto & ci:controllerNames)
-      cout << ci.first << " ";
+    //    for (auto & ci:controllerNames)
+    //      cout << ci.first << " ";
     cout << endl;
 
   }  
