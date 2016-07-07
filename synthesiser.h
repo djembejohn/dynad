@@ -386,6 +386,12 @@ class MonoSynthesiser
     
   }
 
+  void receiveNamedControlMessage (string name,int val) {
+    RController controller = controlSet->getController(name);
+    if (controller) 
+      controller->receiveMidiControlMessage (val);
+  }
+
   void interpretControlMessage (KnobController con, int val) {
     RController controller = controlSet->getController(con);
     if (controller) 
@@ -519,6 +525,7 @@ class PolySynthesiser : public boost::mutex
   void load(string filename);
   void loadMorph(string fname1, string fname2);
   void interpretControlMessage (KnobController con, int val);
+  void interpretNamedControlMessage (string & controlName, int val);
   const vector<RPhone> & getPhones();
   void playToBuffer (RBufferWithMutex buffer);
   void noteOn (int noteVal, int velocity, double timePoint);

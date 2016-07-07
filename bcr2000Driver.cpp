@@ -32,8 +32,8 @@ void BCR2000Driver::setMidiOut (shared_ptr<RtMidiOut> _midiOut) {
 
 void BCR2000Driver::changeSetNumber (ControlVariable cvar, int byte2) {
   if (byte2 >0) {
-    if (cvar.b1>89 && cvar.b1<94) 
-      setNumber = cvar.b1-90;
+    if (cvar.controller>89 && cvar.controller<94) 
+      setNumber = cvar.controller-90;
 
     for (int i = 0; i<8; i++) {
       updateColumnKnobs (i+setNumber*8);
@@ -59,8 +59,8 @@ void BCR2000Driver::outputSetNumber () {
 
 
 void BCR2000Driver::changeColumnMode (ControlVariable cvar, int byte2) {
-  int columnNumber = cvar.b0-176+setNumber*8;
-  if (cvar.b1 == 108 && byte2 == 0) {
+  int columnNumber = cvar.channel+setNumber*8;
+  if (cvar.controller == 108 && byte2 == 0) {
     // pressed the up button
     columnModes[columnNumber] -= 1;
     if (columnModes[columnNumber] <0)
@@ -68,7 +68,7 @@ void BCR2000Driver::changeColumnMode (ControlVariable cvar, int byte2) {
     cout << "up: " << columnNumber << " " << columnModes[columnNumber] << endl;
   }
   
-  if (cvar.b1 == 109 && byte2 == 0) {
+  if (cvar.controller == 109 && byte2 == 0) {
     columnModes[columnNumber] += 1;
     // pressed the down button
     if (columnModes[columnNumber] >3)
@@ -76,7 +76,7 @@ void BCR2000Driver::changeColumnMode (ControlVariable cvar, int byte2) {
     cout << "down: " << columnNumber << " " << columnModes[columnNumber] << endl;
   }
   
-  if (cvar.b1 == 108 || cvar.b1 == 109) {
+  if (cvar.controller == 108 || cvar.controller == 109) {
     
     outputColumnMode(columnNumber);
 	
@@ -127,20 +127,20 @@ void BCR2000Driver::updateColumnKnobs (int columnNumber) {
 }
 
 void BCR2000Driver::interpretControlMessage (ControlVariable cvar, int byte2, RPolySynthesiser synth) {
-  if (cvar.b0 == 191 && cvar.b1 >89 && cvar.b1 < 94) {
+  if (cvar.channel == 15 && cvar.controller >89 && cvar.controller < 94) {
     changeSetNumber(cvar,byte2);
   }
 
-  if (cvar.b0 >=176 && cvar.b0 <=183) {
-    if (cvar.b1 == 108 || cvar.b1 == 109) 
+  if (cvar.channel < 9) {
+    if (cvar.controller == 108 || cvar.controller == 109) 
       changeColumnMode (cvar,byte2);
     
     // needs to intercept knob changes, and thn record them and send
     // them to different control numbers according to the column
     // mode
-    int columnNumber = cvar.b0-176+setNumber*8;
+    int columnNumber = cvar.channel+setNumber*8;
     for (int k = 0; k<4; k++) {
-      if (cvar.b1 == (int)ccKnobNumbers[k]) {
+      if (cvar.controller == (int)ccKnobNumbers[k]) {
 	int knobNumber;
 	// this checks if the knob is pressed down and records it as knob4.
 	if (k == 0 && topRowKnobMode[columnNumber % 8])

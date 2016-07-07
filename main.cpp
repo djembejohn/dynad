@@ -50,6 +50,7 @@ int rtaudio_callback(
 		     );
 
 void midiCallback( double deltatime, std::vector< unsigned char > *message, void *classptr );
+void midiCallbackBCR( double deltatime, std::vector< unsigned char > *message, void *classptr );
 
 
 class MainApplication: public boost::mutex
@@ -62,6 +63,8 @@ public:
   shared_ptr<RtMidiIn> midiIn;
   shared_ptr<RtMidiIn> bcrIn;
   shared_ptr<RtMidiOut> midiOut;
+
+  ControlInputMap inputMap;
 
   double sampleRate;
   unsigned int numChannels;
@@ -89,6 +92,7 @@ public:
     cout << "Initialising Midi input" << endl;
     if (setupMidi())
       throw "Error";
+    inputMap.load("default.map");
   }
   void run() {
     
@@ -250,7 +254,7 @@ public:
     // Don't ignore sysex, timing, or active sensing messages.
     midiIn->ignoreTypes( false, false, false );
 
-    bcrIn->setCallback( midiCallback,(void *) this );
+    bcrIn->setCallback( midiCallbackBCR,(void *) this );
     
     bcr2000Driver.setMidiOut (midiOut);
     bcr2000Driver.initialiseBCR();
@@ -515,9 +519,6 @@ void midiCallback( double deltatime, std::vector< unsigned char > *message, void
 
   MainApplication * myclass = (MainApplication *)classptr;
 
-  //  if (byte0 == 176 && byte1 == 101)
-  //    byte1 = 102;
-
   if (byte0 > 143 && byte0<160) {
     int channelNumber = byte0-144;
     if (myclass->synths[channelNumber]){
@@ -533,9 +534,59 @@ void midiCallback( double deltatime, std::vector< unsigned char > *message, void
       myclass->synths[channelNumber]->noteOff (byte1,byte2,myclass->timePoint);
   }
   else {
-    ControlVariable cvar(byte0,byte1);
-    bcr2000Driver.interpretControlMessage(cvar,byte2,myclass->focalSynth);
+    if ((byte0 & 0xf0) == 0xb0) {
+      int channel = byte0-0xb0;
+      int controller = byte1;
+      ControlVariable cvar(channel,controller);
+      auto range = myclass->inputMap.inputMap.equal_range(cvar);
+      cout << "CC: " << channel << " " << controller;
+      for (auto it = range.first; it != range.second; ++it) {
+	int channelNumber = it->second.second;
+	string & controlName = it->second.first;
+	cout << " -> " << controlName <<"."<<channelNumber;
+	if (myclass->synths[channelNumber])
+	  myclass->synths[channelNumber]->interpretNamedControlMessage(controlName,byte2);
+	
+      }
+      cout << endl;
+    }
   }
+
+}
+
+
+void midiCallbackBCR( double deltatime, std::vector< unsigned char > *message, void *classptr )
+{
+  unsigned int nBytes = message->size();
+  int byte0 = 0;
+  int byte1 = 0;
+  int byte2 = 0;
+
+  for ( unsigned int i=0; i<nBytes; i++ ) {
+    //    std::cout << "Byte " << i << " = " << (int)message->at(i) << ", ";
+    if (i == 0)
+      byte0 = (int)message->at(i);
+    if (i == 1)
+      byte1 = (int)message->at(i);
+    if (i == 2)
+      byte2 = (int)message->at(i);
+  }
+ 
+  //  if ( nBytes > 0 )
+  //    std::cout << "stamp = " << deltatime << std::endl;
+
+  MainApplication * myclass = (MainApplication *)classptr;
+
+  //  if (byte0 == 176 && byte1 == 101)
+  //    byte1 = 102;
+
+  if ((byte0 & 0xf0) == 0xb0) {
+    int channel = byte0-0xb0;
+    int controller = byte1;
+    ControlVariable cvar(channel,controller);
+    bcr2000Driver.interpretControlMessage(cvar,byte2,myclass->focalSynth);    
+  }
+
 }
 
 

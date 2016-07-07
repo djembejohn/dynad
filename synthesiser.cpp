@@ -87,6 +87,19 @@ void PolySynthesiser::interpretControlMessage (KnobController con, int val) {
   unlock();
 }
 
+void PolySynthesiser::interpretNamedControlMessage (string & con, int val) {
+  lock();
+  
+  if (morphSet) if (con=="morph") {
+      morphSet->morphOutput ((double)val/127.0);
+    }
+  RController controller = controlSet->getController(con);
+  if (controller) 
+    controller->receiveMidiControlMessage (val); 
+  unlock();
+}
+
+
 const vector<RPhone> & PolySynthesiser::getPhones() {
   return phones;
 }

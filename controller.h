@@ -1,5 +1,3 @@
-// Copyright 2016 John Bryden
-
 // This file is part of Dynad.
 
 //    Dynad is free software: you can redistribute it and/or modify it
@@ -10,7 +8,7 @@
 //    Dynad is distributed in the hope that it will be useful,
 //    but WITHOUT ANY WARRANTY; without even the implied warranty of
 //    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-//    GNU Affero General Public License for more details.
+//    GNU General Public License for more details.
 
 //    You should have received a copy of the GNU Affero General Public License
 //    along with Dynad.  If not, see <http://www.gnu.org/licenses/>.
@@ -106,22 +104,24 @@ class KnobController
 
   
 
-#if 1
 class ControlVariable 
 {
  public:
-  ControlVariable (int _b0, int _b1)
-    : b0(_b0), b1(_b1)
+  //  ControlVariable (int _byte0, int _byte1)
+  //    : byte0(_byte0), byte1(_byte1)
+  //  {}
+
+  ControlVariable (int _channel, int _controller)
+    : channel(_channel), controller(_controller)
   {}
 
-  int b0;
-  int b1;
+  int channel;
+  int controller;
 
   friend bool operator < (ControlVariable const& lhs, ControlVariable const& rhs);
 
 
 };
-#endif
 
 // abstract class which represents the interface for the controllers
 
@@ -877,7 +877,7 @@ class MorphControllerSet
 {
  public:
   MorphControllerSet ()
-    :  cvar_morphValue (16, 3) 
+    :  cvar_morphValue (24, 0) 
     {}
   RControllerSet outputSet;
 
@@ -926,3 +926,41 @@ class MorphControllerSet
 
 typedef shared_ptr<MorphControllerSet> RMorphControllerSet;
 
+typedef pair<string,int> DynadController;
+
+// just starting with control variables
+class ControlInputMap
+{
+ public:
+  
+  multimap<ControlVariable,DynadController> inputMap;
+  multimap<KnobController,DynadController> inputMapBCR;
+
+  void load (string fname) {
+    inputMap.clear();
+    inputMapBCR.clear();
+    ifstream instr (fname);
+    string line;
+    while (getline(instr,line)) {
+      string type;
+      int entry1;
+      int entry2;
+      string controlName;
+      int channel = -1;
+      // types are bcr, mcn
+      stringstream(line) >> type >> entry1 >> entry2 >> controlName >> channel;
+
+      if (channel>0) {
+	channel -= 1;
+	if (type == "bcr") {
+	  KnobController kc (entry1,entry2);
+	  inputMapBCR.insert (make_pair (kc,make_pair(controlName,channel)));
+	}
+	else if (type == "mcn") {
+	  ControlVariable cv (entry1-1,entry2);
+	  inputMap.insert (make_pair (cv,make_pair(controlName,channel)));  
+	}
+      }
+    }
+  }
+};

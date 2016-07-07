@@ -99,24 +99,24 @@ depend:
 .PHONY : depend
 
 #=============================================================================
-# Target rules for targets named johnsynth
+# Target rules for targets named dynad
 
 # Build rule for target.
-johnsynth: cmake_check_build_system
-	$(MAKE) -f CMakeFiles/Makefile2 johnsynth
-.PHONY : johnsynth
+dynad: cmake_check_build_system
+	$(MAKE) -f CMakeFiles/Makefile2 dynad
+.PHONY : dynad
 
 # fast build rule for target.
-johnsynth/fast:
-	$(MAKE) -f CMakeFiles/johnsynth.dir/build.make CMakeFiles/johnsynth.dir/build
-.PHONY : johnsynth/fast
+dynad/fast:
+	$(MAKE) -f CMakeFiles/dynad.dir/build.make CMakeFiles/dynad.dir/build
+.PHONY : dynad/fast
 
 bcr2000Driver.o: bcr2000Driver.cpp.o
 .PHONY : bcr2000Driver.o
 
 # target to build an object file
 bcr2000Driver.cpp.o:
-	$(MAKE) -f CMakeFiles/johnsynth.dir/build.make CMakeFiles/johnsynth.dir/bcr2000Driver.cpp.o
+	$(MAKE) -f CMakeFiles/dynad.dir/build.make CMakeFiles/dynad.dir/bcr2000Driver.cpp.o
 .PHONY : bcr2000Driver.cpp.o
 
 bcr2000Driver.i: bcr2000Driver.cpp.i
@@ -124,7 +124,7 @@ bcr2000Driver.i: bcr2000Driver.cpp.i
 
 # target to preprocess a source file
 bcr2000Driver.cpp.i:
-	$(MAKE) -f CMakeFiles/johnsynth.dir/build.make CMakeFiles/johnsynth.dir/bcr2000Driver.cpp.i
+	$(MAKE) -f CMakeFiles/dynad.dir/build.make CMakeFiles/dynad.dir/bcr2000Driver.cpp.i
 .PHONY : bcr2000Driver.cpp.i
 
 bcr2000Driver.s: bcr2000Driver.cpp.s
@@ -132,7 +132,7 @@ bcr2000Driver.s: bcr2000Driver.cpp.s
 
 # target to generate assembly for a file
 bcr2000Driver.cpp.s:
-	$(MAKE) -f CMakeFiles/johnsynth.dir/build.make CMakeFiles/johnsynth.dir/bcr2000Driver.cpp.s
+	$(MAKE) -f CMakeFiles/dynad.dir/build.make CMakeFiles/dynad.dir/bcr2000Driver.cpp.s
 .PHONY : bcr2000Driver.cpp.s
 
 buffer.o: buffer.cpp.o
@@ -140,7 +140,7 @@ buffer.o: buffer.cpp.o
 
 # target to build an object file
 buffer.cpp.o:
-	$(MAKE) -f CMakeFiles/johnsynth.dir/build.make CMakeFiles/johnsynth.dir/buffer.cpp.o
+	$(MAKE) -f CMakeFiles/dynad.dir/build.make CMakeFiles/dynad.dir/buffer.cpp.o
 .PHONY : buffer.cpp.o
 
 buffer.i: buffer.cpp.i
@@ -148,7 +148,7 @@ buffer.i: buffer.cpp.i
 
 # target to preprocess a source file
 buffer.cpp.i:
-	$(MAKE) -f CMakeFiles/johnsynth.dir/build.make CMakeFiles/johnsynth.dir/buffer.cpp.i
+	$(MAKE) -f CMakeFiles/dynad.dir/build.make CMakeFiles/dynad.dir/buffer.cpp.i
 .PHONY : buffer.cpp.i
 
 buffer.s: buffer.cpp.s
@@ -156,7 +156,7 @@ buffer.s: buffer.cpp.s
 
 # target to generate assembly for a file
 buffer.cpp.s:
-	$(MAKE) -f CMakeFiles/johnsynth.dir/build.make CMakeFiles/johnsynth.dir/buffer.cpp.s
+	$(MAKE) -f CMakeFiles/dynad.dir/build.make CMakeFiles/dynad.dir/buffer.cpp.s
 .PHONY : buffer.cpp.s
 
 controller.o: controller.cpp.o
@@ -164,7 +164,7 @@ controller.o: controller.cpp.o
 
 # target to build an object file
 controller.cpp.o:
-	$(MAKE) -f CMakeFiles/johnsynth.dir/build.make CMakeFiles/johnsynth.dir/controller.cpp.o
+	$(MAKE) -f CMakeFiles/dynad.dir/build.make CMakeFiles/dynad.dir/controller.cpp.o
 .PHONY : controller.cpp.o
 
 controller.i: controller.cpp.i
@@ -172,7 +172,7 @@ controller.i: controller.cpp.i
 
 # target to preprocess a source file
 controller.cpp.i:
-	$(MAKE) -f CMakeFiles/johnsynth.dir/build.make CMakeFiles/johnsynth.dir/controller.cpp.i
+	$(MAKE) -f CMakeFiles/dynad.dir/build.make CMakeFiles/dynad.dir/controller.cpp.i
 .PHONY : controller.cpp.i
 
 controller.s: controller.cpp.s
@@ -180,7 +180,7 @@ controller.s: controller.cpp.s
 
 # target to generate assembly for a file
 controller.cpp.s:
-	$(MAKE) -f CMakeFiles/johnsynth.dir/build.make CMakeFiles/johnsynth.dir/controller.cpp.s
+	$(MAKE) -f CMakeFiles/dynad.dir/build.make CMakeFiles/dynad.dir/controller.cpp.s
 .PHONY : controller.cpp.s
 
 envelope.o: envelope.cpp.o
@@ -188,7 +188,7 @@ envelope.o: envelope.cpp.o
 
 # target to build an object file
 envelope.cpp.o:
-	$(MAKE) -f CMakeFiles/johnsynth.dir/build.make CMakeFiles/johnsynth.dir/envelope.cpp.o
+	$(MAKE) -f CMakeFiles/dynad.dir/build.make CMakeFiles/dynad.dir/envelope.cpp.o
 .PHONY : envelope.cpp.o
 
 envelope.i: envelope.cpp.i
@@ -196,7 +196,7 @@ envelope.i: envelope.cpp.i
 
 # target to preprocess a source file
 envelope.cpp.i:
-	$(MAKE) -f CMakeFiles/johnsynth.dir/build.make CMakeFiles/johnsynth.dir/envelope.cpp.i
+	$(MAKE) -f CMakeFiles/dynad.dir/build.make CMakeFiles/dynad.dir/envelope.cpp.i
 .PHONY : envelope.cpp.i
 
 envelope.s: envelope.cpp.s
@@ -204,7 +204,7 @@ envelope.s: envelope.cpp.s
 
 # target to generate assembly for a file
 envelope.cpp.s:
-	$(MAKE) -f CMakeFiles/johnsynth.dir/build.make CMakeFiles/johnsynth.dir/envelope.cpp.s
+	$(MAKE) -f CMakeFiles/dynad.dir/build.make CMakeFiles/dynad.dir/envelope.cpp.s
 .PHONY : envelope.cpp.s
 
 main.o: main.cpp.o
@@ -212,7 +212,7 @@ main.o: main.cpp.o
 
 # target to build an object file
 main.cpp.o:
-	$(MAKE) -f CMakeFiles/johnsynth.dir/build.make CMakeFiles/johnsynth.dir/main.cpp.o
+	$(MAKE) -f CMakeFiles/dynad.dir/build.make CMakeFiles/dynad.dir/main.cpp.o
 .PHONY : main.cpp.o
 
 main.i: main.cpp.i
@@ -220,7 +220,7 @@ main.i: main.cpp.i
 
 # target to preprocess a source file
 main.cpp.i:
-	$(MAKE) -f CMakeFiles/johnsynth.dir/build.make CMakeFiles/johnsynth.dir/main.cpp.i
+	$(MAKE) -f CMakeFiles/dynad.dir/build.make CMakeFiles/dynad.dir/main.cpp.i
 .PHONY : main.cpp.i
 
 main.s: main.cpp.s
@@ -228,7 +228,7 @@ main.s: main.cpp.s
 
 # target to generate assembly for a file
 main.cpp.s:
-	$(MAKE) -f CMakeFiles/johnsynth.dir/build.make CMakeFiles/johnsynth.dir/main.cpp.s
+	$(MAKE) -f CMakeFiles/dynad.dir/build.make CMakeFiles/dynad.dir/main.cpp.s
 .PHONY : main.cpp.s
 
 synthesiser.o: synthesiser.cpp.o
@@ -236,7 +236,7 @@ synthesiser.o: synthesiser.cpp.o
 
 # target to build an object file
 synthesiser.cpp.o:
-	$(MAKE) -f CMakeFiles/johnsynth.dir/build.make CMakeFiles/johnsynth.dir/synthesiser.cpp.o
+	$(MAKE) -f CMakeFiles/dynad.dir/build.make CMakeFiles/dynad.dir/synthesiser.cpp.o
 .PHONY : synthesiser.cpp.o
 
 synthesiser.i: synthesiser.cpp.i
@@ -244,7 +244,7 @@ synthesiser.i: synthesiser.cpp.i
 
 # target to preprocess a source file
 synthesiser.cpp.i:
-	$(MAKE) -f CMakeFiles/johnsynth.dir/build.make CMakeFiles/johnsynth.dir/synthesiser.cpp.i
+	$(MAKE) -f CMakeFiles/dynad.dir/build.make CMakeFiles/dynad.dir/synthesiser.cpp.i
 .PHONY : synthesiser.cpp.i
 
 synthesiser.s: synthesiser.cpp.s
@@ -252,7 +252,7 @@ synthesiser.s: synthesiser.cpp.s
 
 # target to generate assembly for a file
 synthesiser.cpp.s:
-	$(MAKE) -f CMakeFiles/johnsynth.dir/build.make CMakeFiles/johnsynth.dir/synthesiser.cpp.s
+	$(MAKE) -f CMakeFiles/dynad.dir/build.make CMakeFiles/dynad.dir/synthesiser.cpp.s
 .PHONY : synthesiser.cpp.s
 
 # Help Target
@@ -261,8 +261,8 @@ help:
 	@echo "... all (the default if no target is provided)"
 	@echo "... clean"
 	@echo "... depend"
+	@echo "... dynad"
 	@echo "... edit_cache"
-	@echo "... johnsynth"
 	@echo "... rebuild_cache"
 	@echo "... bcr2000Driver.o"
 	@echo "... bcr2000Driver.i"
