@@ -47,3 +47,121 @@ make
 Good luck!
 
 
+Basic usage
+===========
+
+When it starts choose a midi in from the list
+
+To load a param file type
+l <param file>
+
+To save
+s <param file>
+
+To create a new polyphonic synth on a midi channel
+n <channel num> <num partials> <num phones>
+
+(for now only put 16 in the <num partials> entry)
+
+If using the BCR2000 type a channel number to make that channel the
+one being edited.
+
+BCR2000 editing
+===============
+
+The bottom right four buttons select the mode.
+
+Top left button = partials 1-8
+Top right button = partials 9-16
+Bottom left button = Synth settings
+Bottom right button = More settings (not used yet)
+
+I might jig this around a bit so it can accommodate more/less partials.
+
+* Partial mode
+
+There are 16 knobs available to edit each partial.
+
+The two buttons can be used to change which parameters are affected by
+the four knobs. It starts at 1-4 (see below). Pressing down (top light
+on ) will edit 5-8. Pressing down again (bottom light on) will edit
+9-12. Pressing down again (both lights on) will edit 13-16. Pressing
+up will go in the opposite direction.
+
+::No lights on
+Knob 1, Parameter 1 - Frequency (I was planning to implement pushing to fine tune)
+Knob 2, Parameter 2 - Level
+Knob 3, Parameter 3 - Noise
+Knob 4, Parameter 4 - Unused (Will be pan eventually probably)
+
+::Top light on
+Knob 1, Parameter 5 - Unused                              _   _
+Knob 2, Parameter 6 - Squareness (makes the wave squarer   |_| |_| )
+Knob 3, Parameter 7 - Sawness (makes the wave saw shaped |\|\|\)
+Knob 4, Parameter 8 - Distortion (flatens the wave)
+
+:: Bottom light on
+Knob 1, Parameter 9 - tremolo freq
+Knob 2, Parameter 10 - tremolo level
+Knob 3, Parameter 11 - vibrato freq
+Knob 4, Parameter 12 - vibrato level
+
+:: Both lights on is currently unused
+Knob 1, Parameter 13
+Knob 2, Parameter 14 
+Knob 3, Parameter 15
+Knob 4, Parameter 16
+
+* Synth settings
+
+Column 1 (General)
+Knob 1 - Volume
+Knob 2 - Pan
+Knob 3 - Distortion
+
+Column 2 (Envelope)
+Knob 1 - Attack
+Knob 2 - Decay
+Knob 3 - Sustain
+Knob 4 - Release
+
+Column 3 (Normal sweep - adds a normal distribution to the partials)
+Knob 1 - Amount (positive for now)
+Knob 2 - Frequency
+Knob 3 - Width
+Knob 4 - Random noise
+
+Column 4 (Other things)
+Knob 1 - Warp the frequencies (Adds a value to each partial frequency)
+Knob 2 - 
+Knob 3 - Poisson sweep: amount 
+Knob 4 - Poisson sweep: frequency
+
+Column 5 (nothing at the moment, I was thinking of making it so that it edits all partials together en masse and using the two buttons) 
+Knob 1 - 
+Knob 2 - 
+Knob 3 -
+Knob 4 -
+
+Column 6 Chorus
+Knob 1 - Dry/wet
+Knob 2 - Osc freq
+Knob 3 - Amount
+Knob 4 -
+
+Column 7 Delay
+Knob 1 - Dry/wet
+Knob 2 - Delay time
+Knob 3 - Feedback
+Knob 4 -
+
+Column 8 Reverb
+Knob 1 - Dry/wet
+Knob 2 - Something
+Knob 3 - Something else
+Knob 4 - Maybe something else I can't remember
+
+
+
+
+
