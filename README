@@ -1,0 +1,37 @@
+// This file is part of Dynad.
+
+//    Dynad is free software: you can redistribute it and/or modify it
+//    under the terms of the GNU Affero General Public License as
+//    published by the Free Software Foundation, either version 3 of
+//    the License, or (at your option) any later version.
+
+//    Dynad is distributed in the hope that it will be useful,
+//    but WITHOUT ANY WARRANTY; without even the implied warranty of
+//    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+//    GNU General Public License for more details.
+
+//    You should have received a copy of the GNU Affero General Public License
+//    along with Dynad.  If not, see <http://www.gnu.org/licenses/>.
+
+To get this to compile (hopefully) the following will work.
+
+You will need a version of g++ that is recent enough to support c++11.
+
+You will need STK (synthesis toolkit) and cmake installed.
+
+STK is at https://ccrma.stanford.edu/software/stk/
+
+In file CMakeLists.txt, update 
+include_directories("~/Software/stk/include")
+and
+link_libraries("~/Software/stk/src/libstk.a")
+to point to where you put STK.
+
+In a terminal type
+cmake .
+and then
+make
+
+Good luck!
+
+
