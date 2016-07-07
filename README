@@ -28,7 +28,7 @@ To get this to compile (hopefully) the following will work.
 
 You will need a version of g++ that is recent enough to support c++11.
 
-You will need STK (synthesis toolkit) and cmake installed.
+You will need STK (synthesis toolkit), jack, and cmake installed.
 
 STK is at https://ccrma.stanford.edu/software/stk/
 
