@@ -877,7 +877,7 @@ class MorphControllerSet
 {
  public:
   MorphControllerSet ()
-    :  cvar_morphValue (24, 0) 
+    :  cvar_morphValue (16, 3) 
     {}
   RControllerSet outputSet;
 

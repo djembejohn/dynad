@@ -50,7 +50,11 @@ Good luck!
 Basic usage
 ===========
 
-When it starts choose a midi in from the list
+When it starts choose a midi in from the list. It should then play on
+that midi in.
+
+It expects 4 cores to run on, sorry, I should add an option to change
+this. It won't work so well with less cores.
 
 To load a param file type
 l <param file>
@@ -61,7 +65,10 @@ s <param file>
 To create a new polyphonic synth on a midi channel
 n <channel num> <num partials> <num phones>
 
-(for now only put 16 in the <num partials> entry)
+(for now only put 16 in the <num partials> entry, as there are some bugs)
+
+m <param file> <param file>
+Load morphing parameters from the two param files
 
 If using the BCR2000 type a channel number to make that channel the
 one being edited.
@@ -118,6 +125,7 @@ Column 1 (General)
 Knob 1 - Volume
 Knob 2 - Pan
 Knob 3 - Distortion
+Knob 4 - Morph
 
 Column 2 (Envelope)
 Knob 1 - Attack
