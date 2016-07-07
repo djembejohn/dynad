@@ -1,3 +1,18 @@
+// This file is part of Dynad.
+
+//    Dynad is free software: you can redistribute it and/or modify
+//    it under the terms of the GNU General Public License as published by
+//    the Free Software Foundation, either version 3 of the License, or
+//    (at your option) any later version.
+
+//    Dynad is distributed in the hope that it will be useful,
+//    but WITHOUT ANY WARRANTY; without even the implied warranty of
+//    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+//    GNU General Public License for more details.
+
+//    You should have received a copy of the GNU General Public License
+//    along with Dynad.  If not, see <http://www.gnu.org/licenses/>.
+
 #pragma once
 #include "buffer.h"
 #include "countedMutex.h"
@@ -301,6 +316,26 @@ class ControllableLevelConcaveIncreasing: public AController
   StkFloat levelMultiplier;
 };
 
+class ControllableLevelConcaveDecreasing: public AController
+{
+ public:
+  ControllableLevelConcaveDecreasing (string name, StkFloat _level=0.0, StkFloat _levelMultiplier = 1.0)
+    : AController(name, _level), levelMultiplier(_levelMultiplier)
+  {}
+  void receiveMidiControlMessage(int value){
+    setLevel (levelMultiplier * exponentialLookUpTable.getValueConcaveDecreasing (StkFloat(value)/(127.0)));
+    //    cout << "New concave exponential level=" << getLevel() << endl;
+  }   
+  int generateMidiControlMessageValue () {
+    return (int)(exponentialLookUpTable.getInverseValueConcaveDecreasing(getLevel()/levelMultiplier)*127);
+  }
+
+ private:
+  StkFloat levelMultiplier;
+};
+
+
+
 
 // the idea is that you create one of these and then pass it to the
 // object that is being controlled, and obs your buncle
@@ -311,6 +346,7 @@ typedef PCountedMutexHolder <ControllableFrequencyLFO> RControllableFrequencyLFO
 
 typedef PCountedMutexHolder <ControllableLevelSquared> RControllerSquared;
 typedef PCountedMutexHolder <ControllableLevelConcaveIncreasing> RControllerConcaveIncreasing;
+typedef PCountedMutexHolder <ControllableLevelConcaveDecreasing> RControllerConcaveDecreasing;
 typedef PCountedMutexHolder <ControllableLevelLinear> RControllerLinear;
 
 // this controller defines a way to receive messages from sub
@@ -628,6 +664,10 @@ class ControllerSet
     addController (volume,16,0);
     addController (pan,16,1);
 
+    RController distortion (new ControllableLevelConcaveIncreasing ("distortion",0.0));
+    addController (distortion,16,2);
+
+
 
     RController attack (new ControllableLevelLinear ("masterAttack",1.0,0.01,3.0));
     addController (attack,17,0);
@@ -743,7 +783,7 @@ class ControllerSet
     addController(freqAdj.GetPointer(),19,0);
 
 
-    ControllerPoissonSweep * pois = new ControllerPoissonSweep ("poissonSweep",partialLevels,0.0,5.0);
+    ControllerPoissonSweep * pois = new ControllerPoissonSweep ("poissonSweep",partialLevels,0.0,10.0);
     RMasterController poissonSweep (pois);
     addController(poissonSweep.GetPointer(),19,2);
 

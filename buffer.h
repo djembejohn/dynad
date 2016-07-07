@@ -1,3 +1,18 @@
+// This file is part of Dynad.
+
+//    Dynad is free software: you can redistribute it and/or modify
+//    it under the terms of the GNU General Public License as published by
+//    the Free Software Foundation, either version 3 of the License, or
+//    (at your option) any later version.
+
+//    Dynad is distributed in the hope that it will be useful,
+//    but WITHOUT ANY WARRANTY; without even the implied warranty of
+//    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+//    GNU General Public License for more details.
+
+//    You should have received a copy of the GNU General Public License
+//    along with Dynad.  If not, see <http://www.gnu.org/licenses/>.
+
 #pragma once
 
 #include "jabVector.h"
@@ -124,12 +139,20 @@ class ExponentialLookUpTable
   double getValueConcaveDecreasing (double proportion) {
     return getValue(proportion);
   }
+
+  double getInverseValueConcaveDecreasing (double value) {
+    return getInverseValue(value);
+  }
   
   // Shape _
   //        |
   //
   double getValueConvexDecreasing (double proportion) {
-    return (1.0-getValue(1.0-proportion));
+    return (1.0-getInverseValue(1.0-proportion));
+  }
+
+  double getInverseValueConvexDecreasing (double value) {
+    return (1.0-getValue(1.0-value));
   }
   
   

@@ -1,3 +1,18 @@
+// This file is part of Dynad.
+
+//    Dynad is free software: you can redistribute it and/or modify
+//    it under the terms of the GNU General Public License as published by
+//    the Free Software Foundation, either version 3 of the License, or
+//    (at your option) any later version.
+
+//    Dynad is distributed in the hope that it will be useful,
+//    but WITHOUT ANY WARRANTY; without even the implied warranty of
+//    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+//    GNU General Public License for more details.
+
+//    You should have received a copy of the GNU General Public License
+//    along with Dynad.  If not, see <http://www.gnu.org/licenses/>.
+
 #include <cstdlib>
 #include <cstring>
 #include <unistd.h>
@@ -392,14 +407,31 @@ int rtaudio_callback(
 
     double volume = synth->controlSet->controllerNames["masterVolume"]->getLevel();
     double pan = synth->controlSet->controllerNames["pan"]->getLevel();
+    double distortionLevel = synth->controlSet->controllerNames["distortion"]->getLevel();
 
     safeVector<StkFloat> & synthbuf = buffer->getOutBufRef();
     StkFloat * outsamples = (StkFloat *)outbuf;
     for (unsigned int i=0;i<nFrames*numberOfChannels; i+=numberOfChannels) {
-      double lval = synthbuf[i];
-      double rval = lval;
-      if (numberOfChannels > 1) 
-	rval = synthbuf[i+1];
+      // ha ha it just takes the left channel here
+      // if I want panned partials I'll need to fix that.
+      double value = synthbuf[i];
+      
+      if (distortionLevel > 0) {
+	// horrible hack
+	double distortionFactor = 2.0;
+	value = value/distortionFactor;
+	if (value > 1.0-distortionLevel)
+	  value = 1.0-distortionLevel;
+	else if (value < -1.0 + distortionLevel)
+	  value = -1.0+distortionLevel;	
+	value = value*distortionFactor;
+	//	cout << distortionLevel << endl;
+      }
+
+
+      double lval = value*pan*2.0;
+      double rval = value*(1.0-pan)*2.0;
+
 
       double cmix =synth->fx.chorusMix->getLevel(); 
       if (cmix > 0.0) {
@@ -410,6 +442,8 @@ int rtaudio_callback(
 	lval = (1-cmix)*lval+cmix*samples[0];
 	rval = (1-cmix)*rval+cmix*samples[1];
       }
+
+      
 
       double emix = synth->fx.echoMix->getLevel();
       if (emix >0.0) {
@@ -431,8 +465,8 @@ int rtaudio_callback(
 	rval = (1-rmix)*rval+rmix*samples[1];
       }
 
-      lval = lval*volume*(1.0-pan)*2.0;
-      rval = rval*volume*pan*2.0;
+      lval = lval * volume;
+      rval = rval * volume;
 
       if (counter == 0) {
 	outsamples[i] = lval;
