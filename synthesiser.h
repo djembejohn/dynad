@@ -1,3 +1,5 @@
+// Copyright 2016 John Bryden
+
 // This file is part of Dynad.
 
 //    Dynad is free software: you can redistribute it and/or modify
