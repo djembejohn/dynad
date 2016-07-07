@@ -13,6 +13,17 @@
 //    You should have received a copy of the GNU Affero General Public License
 //    along with Dynad.  If not, see <http://www.gnu.org/licenses/>.
 
+Dynad
+=====
+
+Dynad is a Dynamic Additive synthesiser. It generates sounds by adding
+lots of waveforms to each other. These waveforms are generally sine
+waves, but that can also be changed. It is still very much in
+development, so it's a bit peculiar to my way of working.
+
+Compilation
+===========
+
 To get this to compile (hopefully) the following will work.
 
 You will need a version of g++ that is recent enough to support c++11.
