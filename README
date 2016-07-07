@@ -125,7 +125,7 @@ Column 1 (General)
 Knob 1 - Volume
 Knob 2 - Pan
 Knob 3 - Distortion
-Knob 4 - Morph
+Knob 4 - Morph (Chagnes between the two parameters loaded, possibly a bit experimental and buggy though)
 
 Column 2 (Envelope)
 Knob 1 - Attack
