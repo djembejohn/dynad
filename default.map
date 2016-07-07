@@ -1,0 +1,5 @@
+# type channelIn controllerIn parameterName channelOut
+# mcn is for midicontrollers
+# bcr is for knobs on the bcr
+mcn 1 70 normalSweep 1
+mcn 1 71 normalSweep_frq 1
