@@ -32,6 +32,8 @@ You will need a version of g++ that is recent enough to support c++11.
 You will need STK (synthesis toolkit), jack, and cmake installed.
 
 STK is at https://ccrma.stanford.edu/software/stk/
+You will need to configure STK (before compiling) as follows
+./configure --with-jack --with-alsa --with-pa
 
 In file CMakeLists.txt, update 
 include_directories("~/Software/stk/include")
@@ -45,7 +47,6 @@ and then
 make
 
 Good luck!
-
 
 Basic usage
 ===========
@@ -89,11 +90,11 @@ I might jig this around a bit so it can accommodate more/less partials.
 
 There are 16 knobs available to edit each partial.
 
-The two buttons can be used to change which parameters are affected by
-the four knobs. It starts at 1-4 (see below). Pressing down (top light
-on ) will edit 5-8. Pressing down again (bottom light on) will edit
-9-12. Pressing down again (both lights on) will edit 13-16. Pressing
-up will go in the opposite direction.
+The two buttons can be used to cycle through which parameters are
+affected by the four knobs. It starts at 1-4 (see below). Pressing
+down (top light on ) will edit 5-8. Pressing down again (bottom light
+on) will edit 9-12. Pressing down again (both lights on) will edit
+13-16. Pressing up will go in the opposite direction.
 
 ::No lights on
 Knob 1, Parameter 1 - Frequency (I was planning to implement pushing to fine tune)
