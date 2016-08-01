@@ -38,6 +38,8 @@ public:
   void initialiseBCR();
   void updateKnobsFromControlSet(RControllerSet controlSet);
   void setColumnKnobValue(KnobController kc, int value);
+
+  bool active;
   
   int setNumber;
 

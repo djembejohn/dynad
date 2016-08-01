@@ -33,6 +33,11 @@ typedef boost::variate_generator<base_generator_type&, lognormal_distribution_ty
 extern base_generator_type RNGGEN;
 extern ofstream conlog;
 
+extern string convertOSCStringToDynadString(const string & input);
+extern string convertDynadStringToOSCString(const string & input);
+
+
+
 // Trying to think about what I want for a controller
 // 
 // I want a layer that can interface with OSC and midi.
@@ -129,16 +134,22 @@ class AController: public PCountedMutexHeapObject
 {
  public:
  AController(string _name="", StkFloat _level=1.0)
-   : name(_name), level (_level), outputLevel (level), adjustment(0.0)
+   : name(_name), level (_level), outputLevel (level)
   {}
   
   // return true if this should update the controllers on the input
   // device
-  virtual void receiveMidiControlMessage (int value) = 0;
-  
+  virtual void receiveMidiControlMessage (int value) = 0;  
   virtual int generateMidiControlMessageValue () = 0;
 
+  virtual void receiveOSCControlMessage (double value) = 0;
+  virtual double generateOSCControlMessageValue () = 0;
+
+
   StkFloat getOutputLevel() {
+    double adjustment = 0;
+    for (auto & adj:adjustments) 
+      adjustment += adj.second;
     StkFloat outputLevel = level + adjustment;
     if (outputLevel <0)
       outputLevel = 0;
@@ -156,9 +167,9 @@ class AController: public PCountedMutexHeapObject
     return false;
   }
 
-  void setAdjustment (StkFloat amount) {
+  void setAdjustment (string name, StkFloat amount) {
     //    cout << "New adjustment: " << amount << endl;
-    adjustment = amount;
+    adjustments[name] = amount;
   }
 
   void setName (string & newName) {
@@ -177,7 +188,7 @@ class AController: public PCountedMutexHeapObject
   StkFloat level; 
 
   StkFloat outputLevel;
-  StkFloat adjustment;
+  map<string,StkFloat> adjustments;
 
 
 };
@@ -222,7 +233,16 @@ class NoteControlledFrequency: public AController
     setLevel (midiNoteToFrequency(value));
   }
 
+  void receiveOSCControlMessage(double value){
+    // update the frequencyMultiplier in some way based on the value
+    setLevel (midiNoteToFrequency(int(value)));
+  }
+
   int generateMidiControlMessageValue () {
+    cerr << "NoteControlledFrequency::generateMidiControlMessageValue is not implemented yet." << endl;
+    return 54;
+  }
+  double generateOSCControlMessageValue () {
     cerr << "NoteControlledFrequency::generateMidiControlMessageValue is not implemented yet." << endl;
     return 54;
   }
@@ -241,8 +261,14 @@ class ControllableFrequencyMultiplier: public AController
     // update the frequencyMultiplier in some way based on the value
     setLevel ((StkFloat)value+1.0);
   }
+  void receiveOSCControlMessage(double value){
+    setLevel ((StkFloat)value);
+  }
   int generateMidiControlMessageValue () {
     return (int)(getLevel()-1);
+  }
+  double generateOSCControlMessageValue () {
+    return (getLevel()-1);
   }
 
 };
@@ -254,11 +280,17 @@ class ControllableFrequencyLFO: public AController
   ControllableFrequencyLFO (string name, StkFloat _level=2.0)
     : AController(name, _level)
   {}
+  void receiveOSCControlMessage(double value){
+    setLevel (0.1+exponentialLookUpTable.getValueConcaveIncreasing (StkFloat(value))*20);
+  }
   void receiveMidiControlMessage(int value){
     setLevel (0.1+exponentialLookUpTable.getValueConcaveIncreasing (StkFloat(value)/(127.0))*20);
   }   
   int generateMidiControlMessageValue () {
     return (int)(127*exponentialLookUpTable.getInverseValueConcaveIncreasing((getLevel()-0.1)/20));
+  }
+  double generateOSCControlMessageValue () {
+    return (exponentialLookUpTable.getInverseValueConcaveIncreasing((getLevel()-0.1)/20.0));
   }
 };
 
@@ -269,12 +301,18 @@ class ControllableLevelSquared: public AController
   ControllableLevelSquared (string name, StkFloat _level=0.0)
     : AController(name, _level)
   {}
+  void receiveOSCControlMessage(double value){
+    setLevel (StkFloat(value*value));
+  }
   void receiveMidiControlMessage(int value){
     setLevel (StkFloat(value*value)/(127.0*127.0));
     //    cout << "New squared level=" << getLevel() << endl;
   }   
   int generateMidiControlMessageValue () {
     return (int)(sqrt(getLevel()*127*127));
+  }
+  double generateOSCControlMessageValue () {
+    return (sqrt(getLevel()));
   }
 
 };
@@ -287,12 +325,18 @@ class ControllableLevelLinear: public AController
   {}
 
 
+  void receiveOSCControlMessage(double value){
+    setLevel (minLevel + (maxLevel-minLevel)*StkFloat(value));
+  }
   void receiveMidiControlMessage(int value){
     setLevel (minLevel + (maxLevel-minLevel)*StkFloat(value)/(127.0));
     //    cout << "New linear level=" << getLevel() << endl;
   }   
   int generateMidiControlMessageValue () {
     return (int)((getLevel()-minLevel) *127.0/(maxLevel-minLevel));
+  }
+  double generateOSCControlMessageValue () {
+    return ((getLevel()-minLevel) /(maxLevel-minLevel));
   }
 
   StkFloat maxLevel;
@@ -303,19 +347,29 @@ class ControllableLevelLinear: public AController
 class ControllableLevelConcaveIncreasing: public AController
 {
  public:
-  ControllableLevelConcaveIncreasing (string name, StkFloat _level=0.0, StkFloat _levelMultiplier = 1.0)
-    : AController(name, _level), levelMultiplier(_levelMultiplier)
+  ControllableLevelConcaveIncreasing (string name, StkFloat _level=0.0, StkFloat _min = 0.0, StkFloat _max = 1.0)
+    : AController(name, _level),maxLevel(_max),minLevel(_min)
   {}
+
+  void receiveOSCControlMessage(double value){
+    setLevel (minLevel + (maxLevel-minLevel)*exponentialLookUpTable.getValueConcaveIncreasing (StkFloat(value)));
+    //    cout << "New concave exponential level=" << getLevel() << endl;
+  }
+
   void receiveMidiControlMessage(int value){
-    setLevel (levelMultiplier * exponentialLookUpTable.getValueConcaveIncreasing (StkFloat(value)/(127.0)));
+    setLevel (minLevel + (maxLevel-minLevel)*exponentialLookUpTable.getValueConcaveIncreasing (StkFloat(value)/(127.0)));
     //    cout << "New concave exponential level=" << getLevel() << endl;
   }   
   int generateMidiControlMessageValue () {
-    return (int)(exponentialLookUpTable.getInverseValueConcaveIncreasing(getLevel()/levelMultiplier)*127);
+    return (int)((exponentialLookUpTable.getInverseValueConcaveIncreasing(getLevel())-minLevel)*127.0/(maxLevel-minLevel));
+  }
+  double generateOSCControlMessageValue () {
+    return ((exponentialLookUpTable.getInverseValueConcaveIncreasing(getLevel())-minLevel)/(maxLevel-minLevel));
   }
 
  private:
-  StkFloat levelMultiplier;
+  StkFloat maxLevel;
+  StkFloat minLevel;
 };
 
 class ControllableLevelConcaveDecreasing: public AController
@@ -324,12 +378,21 @@ class ControllableLevelConcaveDecreasing: public AController
   ControllableLevelConcaveDecreasing (string name, StkFloat _level=0.0, StkFloat _levelMultiplier = 1.0)
     : AController(name, _level), levelMultiplier(_levelMultiplier)
   {}
+
+  void receiveOSCControlMessage(double value){
+    setLevel (levelMultiplier * exponentialLookUpTable.getValueConcaveDecreasing (StkFloat(value)));
+    //    cout << "New concave exponential level=" << getLevel() << endl;
+  }  
+
   void receiveMidiControlMessage(int value){
     setLevel (levelMultiplier * exponentialLookUpTable.getValueConcaveDecreasing (StkFloat(value)/(127.0)));
     //    cout << "New concave exponential level=" << getLevel() << endl;
   }   
   int generateMidiControlMessageValue () {
     return (int)(exponentialLookUpTable.getInverseValueConcaveDecreasing(getLevel()/levelMultiplier)*127);
+  }
+  double generateOSCControlMessageValue () {
+    return (exponentialLookUpTable.getInverseValueConcaveDecreasing(getLevel()/levelMultiplier));
   }
 
  private:
@@ -396,19 +459,29 @@ class SubController : public AController
 class SubControllableLevelConcaveIncreasing: public SubController
 {
  public:
-  SubControllableLevelConcaveIncreasing (string name, RMasterController master, string conclass, StkFloat level=0.0, StkFloat _levelMultiplier = 1.0)
-    : SubController(name,master,conclass,level), levelMultiplier(_levelMultiplier)
+  SubControllableLevelConcaveIncreasing (string name, RMasterController master, string conclass, StkFloat level=0.0, StkFloat _min = 0.0, StkFloat _max = 1.0)
+    : SubController(name,master,conclass,level),maxLevel(_max),minLevel(_min)
   {}
+
+  void receiveOSCControlMessage(double value){
+    setLevel (minLevel + (maxLevel-minLevel)*exponentialLookUpTable.getValueConcaveIncreasing (StkFloat(value)));
+    //    cout << "New concave exponential level=" << getLevel() << endl;
+  }
+
   void receiveMidiControlMessage(int value){
-    setLevel (levelMultiplier * exponentialLookUpTable.getValueConcaveIncreasing (StkFloat(value)/(127.0)));
-    //    cout << "New concave exponential level=" << level << endl;
+    setLevel (minLevel + (maxLevel-minLevel)*exponentialLookUpTable.getValueConcaveIncreasing (StkFloat(value)/(127.0)));
+    //    cout << "New concave exponential level=" << getLevel() << endl;
   }   
   int generateMidiControlMessageValue () {
-    return (int)(exponentialLookUpTable.getInverseValueConcaveIncreasing(getLevel()/levelMultiplier)*127);
+    return (int)((exponentialLookUpTable.getInverseValueConcaveIncreasing(getLevel())-minLevel)*127.0/(maxLevel-minLevel));
+  }
+  double generateOSCControlMessageValue () {
+    return ((exponentialLookUpTable.getInverseValueConcaveIncreasing(getLevel())-minLevel)/(maxLevel-minLevel));
   }
 
  private:
-  StkFloat levelMultiplier;
+  StkFloat maxLevel;
+  StkFloat minLevel;
 };
 
 
@@ -420,12 +493,20 @@ class SubControllableLevelLinear: public SubController
   {}
 
 
+  void receiveOSCControlMessage(double value){
+    setLevel (minLevel + (maxLevel-minLevel)*StkFloat(value));
+    //    cout << "New linear level=" << getLevel() << endl;
+  }
+
   void receiveMidiControlMessage(int value){
     setLevel (minLevel + (maxLevel-minLevel)*StkFloat(value)/(127.0));
     //    cout << "New linear level=" << getLevel() << endl;
   }   
   int generateMidiControlMessageValue () {
     return (int)((getLevel()-minLevel) *127.0/(maxLevel-minLevel));
+  }
+  double generateOSCControlMessageValue () {
+    return ((getLevel()-minLevel) /(maxLevel-minLevel));
   }
 
  private:
@@ -457,6 +538,11 @@ class ControllerNormalSweep : public AMasterController
     return true;
   }
 
+  void receiveOSCControlMessage(double value){
+    setLevel (levelMultiplier * exponentialLookUpTable.getValueConcaveIncreasing (StkFloat(value)));
+    updateControllers();
+  }
+
   void receiveMidiControlMessage(int value){
     setLevel (levelMultiplier * exponentialLookUpTable.getValueConcaveIncreasing (StkFloat(value)/(127.0)));
     updateControllers();
@@ -464,6 +550,10 @@ class ControllerNormalSweep : public AMasterController
 
   int generateMidiControlMessageValue () {
     return (int)(exponentialLookUpTable.getInverseValueConcaveIncreasing(getLevel()/levelMultiplier)*127);
+
+  }
+  double generateOSCControlMessageValue () {
+    return (exponentialLookUpTable.getInverseValueConcaveIncreasing(getLevel()/levelMultiplier));
 
   }
 
@@ -495,7 +585,7 @@ class ControllerNormalSweep : public AMasterController
 	noiseval = gen();
       }
       //      cout << thisval << " " << noiseval;
-      controller->setAdjustment(noiseval);
+      controller->setAdjustment(getName(),noiseval);
       counter ++;
     }
     //    cout << endl;
@@ -530,6 +620,11 @@ class ControllerPoissonSweep : public AMasterController
     return true;
   }
 
+  void receiveOSCControlMessage(double value){
+    setLevel (levelMultiplier * exponentialLookUpTable.getValueConcaveIncreasing (StkFloat(value)));
+    updateControllers();
+  }
+
   void receiveMidiControlMessage(int value){
     setLevel (levelMultiplier * exponentialLookUpTable.getValueConcaveIncreasing (StkFloat(value)/(127.0)));
     updateControllers();
@@ -537,6 +632,10 @@ class ControllerPoissonSweep : public AMasterController
 
   int generateMidiControlMessageValue () {
     return (int)(exponentialLookUpTable.getInverseValueConcaveIncreasing(getLevel()/levelMultiplier)*127);
+
+  }
+  double generateOSCControlMessageValue () {
+    return (exponentialLookUpTable.getInverseValueConcaveIncreasing(getLevel()/levelMultiplier));
 
   }
 
@@ -561,7 +660,7 @@ class ControllerPoissonSweep : public AMasterController
       
       StkFloat thisval = level*boost::math::pdf(poisson,xval);
       //      cout << thisval << " " << noiseval;
-      controller->setAdjustment(thisval);
+      controller->setAdjustment(getName(),thisval);
       counter ++;
     }
     //    cout << endl;
@@ -596,6 +695,11 @@ class ControllerFrequencyAdjuster : public AMasterController
     return true;
   }
 
+  void receiveOSCControlMessage(double value){
+    setLevel (levelMultiplier * exponentialLookUpTable.getValueConcaveIncreasing (StkFloat(value)));
+    updateControllers();
+  }
+
   void receiveMidiControlMessage(int value){
     setLevel (levelMultiplier * exponentialLookUpTable.getValueConcaveIncreasing (StkFloat(value)/(127.0)));
     updateControllers();
@@ -603,6 +707,10 @@ class ControllerFrequencyAdjuster : public AMasterController
 
   int generateMidiControlMessageValue () {
     return (int)(exponentialLookUpTable.getInverseValueConcaveIncreasing(getLevel()/levelMultiplier)*127);
+
+  }
+  double generateOSCControlMessageValue () {
+    return (exponentialLookUpTable.getInverseValueConcaveIncreasing(getLevel()/levelMultiplier));
 
   }
 
@@ -623,7 +731,7 @@ class ControllerFrequencyAdjuster : public AMasterController
       if (freqmult!=1.0) {
 	//	StkFloat newval = freqmult*amount;
 	//	controller->setAdjustment(newval-freqmult);
-	controller->setAdjustment(amount-1.0);
+	controller->setAdjustment(getName(),amount-1.0);
       }
     }
     //    cout << endl;
@@ -638,6 +746,14 @@ class ControllerFrequencyAdjuster : public AMasterController
   vector<RController> controllers;
 
 };
+
+
+
+
+
+
+
+
 
 
 
@@ -671,20 +787,20 @@ class ControllerSet
 
 
 
-    RController attack (new ControllableLevelLinear ("masterAttack",1.0,0.01,3.0));
+    RController attack (new ControllableLevelConcaveIncreasing ("masterAttack",1.0,0.01,10.0));
     addController (attack,17,0);
-    RController decay (new ControllableLevelLinear ("masterDecay",0.001,0.01,1.0));
+    RController decay (new ControllableLevelConcaveIncreasing ("masterDecay",0.001,0.01,5.0));
     addController (decay,17,1);
     RController sustain (new ControllableLevelLinear ("masterSustain",1.0));
     addController (sustain,17,2);
-    RController release (new ControllableLevelLinear ("masterRelease",2.0,0.01,10.0));
+    RController release (new ControllableLevelConcaveIncreasing ("masterRelease",2.0,0.01,10.0));
     addController (release,17,3);
 
-    RController chorusModDepth (new ControllableLevelLinear ("chorusModDepth"));
+    RController chorusModDepth (new ControllableLevelConcaveIncreasing ("chorusModDepth"));
     RController chorusModFrequency (new ControllableLevelLinear ("chorusModFrequency"));
     RController chorusMix (new ControllableLevelLinear ("chorusMix",0.0));
 
-    RController echoDelay (new ControllableLevelLinear ("echoDelay",48000/4,1,48000*5));
+    RController echoDelay (new ControllableLevelConcaveIncreasing ("echoDelay",48000/4,1,48000*5));
     RController echoFeedback (new ControllableLevelLinear ("echoFeedback",0.3));
     RController echoMix (new ControllableLevelLinear ("echoMix",0.0));
 
@@ -711,6 +827,9 @@ class ControllerSet
     vector<RController> partialLevels;
     vector<RController> partialFrequencies;
 
+    vector<RController> wobbleLevels;
+    vector<RController> sawLevels;
+
     for (int i = 0; i<numPartials; i++) {
 
       RControllableFrequencyMultiplier freqMult (new ControllableFrequencyMultiplier (getColumnName("freqMult",i),1.0*(i+1)));
@@ -718,20 +837,29 @@ class ControllerSet
 
       partialFrequencies.push_back(RController(freqMult));
 
-      RControllerConcaveIncreasing level (new ControllableLevelConcaveIncreasing (getColumnName("level",i),exp(-i),1.0));
+      RControllerConcaveIncreasing level (new ControllableLevelConcaveIncreasing (getColumnName("level",i),exp(-i),0.0,1.0));
       addController (level.GetPointer(),i,1);
       
       partialLevels.push_back(RController(level.GetPointer()));
 
-      RControllerLinear frequencyNoise(new ControllableLevelLinear (getColumnName("frequencyNoise",i),0.00));
-      addController (frequencyNoise.GetPointer(),i,2);
+      RControllerLinear pan (new ControllableLevelLinear (getColumnName("pan",i),0.5));
+      addController(pan.GetPointer(),i,2);
 
+
+      RControllerConcaveIncreasing chorus (new ControllableLevelConcaveIncreasing (getColumnName("chorus",i),1.0,1.0,1.2));
+      addController(chorus.GetPointer(),i,3);
+
+
+      RControllerLinear frequencyNoise(new ControllableLevelLinear (getColumnName("frequencyNoise",i),0.00));
+      addController (frequencyNoise.GetPointer(),i,5);
 
       RControllerConcaveIncreasing shape (new ControllableLevelConcaveIncreasing (getColumnName("shape",i),0.0));
       addController(shape.GetPointer(),i,6);
 
       RControllerConcaveIncreasing saw (new ControllableLevelConcaveIncreasing (getColumnName("saw",i),0.0));
       addController(saw.GetPointer(),i,7);
+
+      sawLevels.push_back (RController(saw));
 
       RControllerConcaveIncreasing distortion (new ControllableLevelConcaveIncreasing (getColumnName("distortion",i),0.0));
       addController(distortion.GetPointer(),i,8);
@@ -744,28 +872,31 @@ class ControllerSet
       RControllerConcaveIncreasing amposclevel (new ControllableLevelConcaveIncreasing (getColumnName("amposclevel",i),0.0));
       addController(amposclevel.GetPointer(),i,11);
       
-      RControllableFrequencyLFO freqoscfreq (new ControllableFrequencyLFO (getColumnName("freqoscfreq",i),2.0));
+      RControllableFrequencyLFO freqoscfreq (new ControllableFrequencyLFO (getColumnName("freqoscfreq",i),3.0));
       addController(freqoscfreq.GetPointer(),i,12);
 
-      RControllerConcaveIncreasing freqosclevel (new ControllableLevelConcaveIncreasing (getColumnName("freqosclevel",i),0.0));
+      RControllerConcaveIncreasing freqosclevel (new ControllableLevelConcaveIncreasing (getColumnName("freqosclevel",i),0.0,0.0,0.5));
       addController(freqosclevel.GetPointer(),i,13);
+
+      wobbleLevels.push_back (RController(freqosclevel));
 
     }
     
+
     ControllerNormalSweep * conc = new ControllerNormalSweep ("normalSweep",partialLevels,0.0,5.0);
     RMasterController normalSweep (conc);
     addController(normalSweep.GetPointer(),18,0);
 
     RController freq (new SubControllableLevelLinear
 		      (
-		       "normalSweep_frq",
+		       "normalSweep-frq",
 		       normalSweep, "frq", 0.0,0.5,20.0
 		       )
 		      );
     addController(freq,18,1);
-    RController width (new SubControllableLevelLinear
+    RController width (new SubControllableLevelConcaveIncreasing
 		       (
-			"normalSweep_wd",
+			"normalSweep-wd",
 			normalSweep, "wd", 2, 0.01,10.0
 			)
 		       );
@@ -773,7 +904,7 @@ class ControllerSet
 
     RController noise (new SubControllableLevelLinear
 		       (
-			"normalSweep_ns",
+			"normalSweep-ns",
 			normalSweep, "ns", 0, 0.00,0.1
 			)
 		       );
@@ -791,11 +922,53 @@ class ControllerSet
 
     RController lambda (new SubControllableLevelLinear
 		      (
-		       "poissonSweep_lambda",
+		       "poissonSweep-lambda",
 		       poissonSweep, "lambda", 0.01,0.01,numPartials+5
 		       )
 		      );
     addController(lambda,19,3);
+
+
+#if 0
+    ControllerNormalSweep * wob_conc = new ControllerNormalSweep ("wobbleSweep",wobbleLevels,0.0,1.0);
+    RMasterController wobbleSweep (wob_conc);
+    addController(wobbleSweep.GetPointer(),20,0);
+
+    RController wobble_freq (new SubControllableLevelLinear
+		      (
+		       "wobbleSweep-frq",
+		       wobbleSweep, "frq", 0.0,0.5,20.0
+		       )
+		      );
+    addController(wobble_freq,20,1);
+    RController wobble_width (new SubControllableLevelConcaveIncreasing
+		       (
+			"wobbleSweep-wd",
+			wobbleSweep, "wd", 3, 0.01,10.0
+			)
+		       );
+    //    addController(wobble_width,20,2);
+
+#endif
+
+    ControllerNormalSweep * saw_conc = new ControllerNormalSweep ("sawSweep",sawLevels,0.0,1.0);
+    RMasterController sawSweep (saw_conc);
+    addController(sawSweep.GetPointer(),20,0);
+
+    RController saw_freq (new SubControllableLevelLinear
+		      (
+		       "sawSweep-frq",
+		       sawSweep, "frq", 0.0,0.5,20.0
+		       )
+		      );
+    addController(saw_freq,20,1);
+    RController saw_width (new SubControllableLevelConcaveIncreasing
+		       (
+			"sawSweep-wd",
+			sawSweep, "wd", 3, 0.01,10.0
+			)
+		       );
+    addController(saw_width,20,2);
 
     
     //    for (auto & ci:controllerNames)
@@ -851,12 +1024,15 @@ class ControllerSet
       string cname;
       StkFloat value;
       stringstream(line) >> cname >> value;
-      RController con = controllerNames[cname];
+      RController con = getController(cname);
       if (con)
 	con->setLevel (value);
+      else 
+	cerr << "Failed to find controller for param " << cname << endl;
     }
     for (auto conandname:controllerNames) {
-      conandname.second->postLoadUpdate();
+      if (conandname.second)
+	  conandname.second->postLoadUpdate();
     }
   }
 
@@ -926,40 +1102,29 @@ class MorphControllerSet
 
 typedef shared_ptr<MorphControllerSet> RMorphControllerSet;
 
-typedef pair<string,int> DynadController;
+//typedef pair<string,int> DynadController;
 
 // just starting with control variables
 class ControlInputMap
 {
  public:
   
-  multimap<ControlVariable,DynadController> inputMap;
-  multimap<KnobController,DynadController> inputMapBCR;
+  multimap<int,string> inputMap;
+  multimap<string,int> outputMap;
 
   void load (string fname) {
     inputMap.clear();
-    inputMapBCR.clear();
     ifstream instr (fname);
     string line;
     while (getline(instr,line)) {
-      string type;
-      int entry1;
-      int entry2;
+      int controller = -1;
       string controlName;
-      int channel = -1;
       // types are bcr, mcn
-      stringstream(line) >> type >> entry1 >> entry2 >> controlName >> channel;
+      stringstream(line) >> controller >> controlName;
 
-      if (channel>0) {
-	channel -= 1;
-	if (type == "bcr") {
-	  KnobController kc (entry1,entry2);
-	  inputMapBCR.insert (make_pair (kc,make_pair(controlName,channel)));
-	}
-	else if (type == "mcn") {
-	  ControlVariable cv (entry1-1,entry2);
-	  inputMap.insert (make_pair (cv,make_pair(controlName,channel)));  
-	}
+      if (controller>-1) {
+	inputMap.insert (make_pair (controller,controlName));  
+	outputMap.insert (make_pair (controlName,controller));  
       }
     }
   }

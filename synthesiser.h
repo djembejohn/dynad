@@ -45,12 +45,17 @@ public:
 
   list<REnvelope> envelopes;
   RController masterVolume;
+  RController pan;
 
-  Partial (RController _masterVolume, RController level, RController noteFrequency, RController frequencyMultiplier, RController frequencyNoise = 0, RController distortion = 0, RController squareshape = 0, RController sawshape = 0)
-    : oscillator (level, frequencyMultiplier, noteFrequency, frequencyNoise, distortion, squareshape, sawshape),
-    masterVolume(_masterVolume)
+  Partial (RController _masterVolume, RController _pan, RController level, RController noteFrequency, RController frequencyMultiplier, RController frequencyNoise = 0, RController distortion = 0, RController squareshape = 0, RController sawshape = 0, RController chorus = 0)
+    : oscillator (level, frequencyMultiplier, noteFrequency, frequencyNoise, distortion, squareshape, sawshape, chorus),
+    masterVolume(_masterVolume), pan(_pan)
     {}
     
+  bool attachController(RController con){
+    return oscillator.attachController(con);
+  }
+  
   void playToThreadSafeBuffer(RBufferWithMutex threadSafeBuffer) {
     //    cout << "partial " << threadSafeBuffer->timeStart 
     //	 << " " << threadSafeBuffer->numberOfFrames
@@ -125,9 +130,19 @@ public:
 	value = oscillator.getValue(timePoint);
 
       // must implement pan ;)
-      if (value*level != 0.0) 
-	for (int j = 0; j<numChannels; j++)
-	  buffer[i*numChannels+j] += value * level;
+      if (value*level != 0.0) {
+	
+	if (numChannels>1) {
+	  double panLevel = pan->getOutputLevel();
+	  
+	  double lval = value*level*panLevel*2.0;
+	  double rval = value*level*(1.0-panLevel)*2.0;
+	  buffer[i*numChannels] = lval;
+	  buffer[i*numChannels+1] = rval;
+	}
+	else
+	  buffer[i*numChannels] = value*level;
+      }
 
 
     }
@@ -222,12 +237,18 @@ class Phone
 	
 	RController freqmult = controlSet->getController("freqMult",i);
 	RController level = controlSet->getController("level",i);
+
+	RController pan = controlSet->getController("pan",i);
+	RController chorus = controlSet->getController("chorus",i);
+	
 	RController frequencyNoise = controlSet->getController("frequencyNoise",i);
 	RController shape = controlSet->getController("shape",i);
 	RController saw = controlSet->getController("saw",i);
 	RController distortion = controlSet->getController("distortion",i);
 
-	RPartial newPartial = RPartial(new Partial (masterVolume, level, note.GetPointer(), freqmult, frequencyNoise, distortion,shape,saw));
+	
+
+	RPartial newPartial = RPartial(new Partial (masterVolume, pan, level, note.GetPointer(), freqmult, frequencyNoise, distortion,shape,saw,chorus));
 	newPartial->addEnvelope (phoneEnvelope);
 
 	RController amposclevel = controlSet->getController("amposclevel",i);
@@ -526,11 +547,13 @@ class PolySynthesiser : public boost::mutex
   void loadMorph(string fname1, string fname2);
   void interpretControlMessage (KnobController con, int val);
   void interpretNamedControlMessage (string & controlName, int val);
+  bool interpretOSCControlMessage (string & controlName, double val);
   const vector<RPhone> & getPhones();
   void playToBuffer (RBufferWithMutex buffer);
   void noteOn (int noteVal, int velocity, double timePoint);
   void noteOff (int noteVal, int velocity, double timePoint);
   void updateController(); 
+  void updateOSCController(); 
 };
 
 typedef shared_ptr<PolySynthesiser> RPolySynthesiser;

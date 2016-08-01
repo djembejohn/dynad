@@ -25,7 +25,82 @@
 using namespace jab;
 using namespace std;
 
+enum EnvelopePhase {
+  EP_Silent,
+  EP_Attack,
+  EP_Decay,
+  EP_Sustain,
+  EP_Release,
+  EP_PreAttackFastRelease
+};
+
 //extern ofstream envelopelog;
+
+// Envelopes are a bit of a mess, sorry!
+//
+// Just thinking about this, the real way envelopes should work is
+// that they have an internal level and a target level and a rate to
+// get to the target.
+// 
+// Then attack/decay/sustain/release just set this appropriately.
+
+#if 0
+
+class Envelope
+{
+ public:
+  // Use an id to make the envelope trackable for debugging
+  int id;
+  bool verbose;
+
+  // controllers for the different parameters of the envelope
+  RController attack;
+  RController decay;
+  RController sustain;
+  RController release;
+
+  Envelope (RController a,RController d,RController s,RController r);
+ 
+  void noteOn (double t, double level);
+  void noteOff (double t);
+  bool isPlaying ();
+
+  double getLevel(double t);
+  
+  // Because many different partials use the same envelope, I can
+  // speed things up by buffering envelope values
+  void prepareBuffer(double start, double end, double inc);
+  double getBufferedLevel(double t);
+
+ private:
+
+  double level;
+  double noteLevel;
+
+  // Whether it is in the a/d/s/r phase...
+  EnvelopePhase phase;
+
+  // each event (note on, note off, phase transition) updates the
+  // previous and next event levels
+
+  double tPreviousEvent;
+  double tNextEvent;
+
+  double previousLevel;
+  double targetLevel;
+
+  // for envelope ids
+  static int env_id;
+  static boost::mutex mx;
+
+  // for the internal buffer
+  double bufferStart;
+  double bufferInc;
+  safeVector<double> buffer;
+
+  
+};
+#else
 
 class Envelope
 {
@@ -69,5 +144,7 @@ private:
   double bufferInc;
   safeVector<double> buffer;
 };
+
+#endif
 
 typedef shared_ptr<Envelope> REnvelope;

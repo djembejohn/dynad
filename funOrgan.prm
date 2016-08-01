@@ -132,9 +132,9 @@ masterRelease 0.717953
 masterSustain 0.409449
 masterVolume 0.0314961
 normalSweep 0.968391
-normalSweep_frq 2.34252
-normalSweep_ns 0
-normalSweep_wd 2.0552
+normalSweep-frq 2.34252
+normalSweep-ns 0
+normalSweep-wd 2.0552
 saw_0 0
 saw_1 0
 saw_10 0

@@ -20,6 +20,7 @@
 ExponentialLookUpTable exponentialLookUpTable;
 FrequencyModulatorExponentialLookUpTable frequencyModulatorExponentialLookUpTable;
 GaussianNoiseBuffer noisegen;
+NoiseBuffer whitenoisegen;
 SinWaveLookupTable sinWaveLookupTable;
 
 #if 0

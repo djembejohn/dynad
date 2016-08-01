@@ -20,6 +20,7 @@
 #include "jabVector.h"
 #include "counted.h"
 #include <boost/random/mersenne_twister.hpp>
+#include <boost/random/uniform_real_distribution.hpp>
 #include <boost/random/normal_distribution.hpp>
 #include <boost/random/variate_generator.hpp>
 #include <boost/thread/mutex.hpp>
@@ -31,12 +32,15 @@ using namespace jab;
 
 typedef boost::mt19937 base_rng_type;
 typedef boost::mt19937& base_rng_ref;
+typedef boost::random::uniform_real_distribution<double> uniform_dist;  
+typedef boost::variate_generator<base_rng_ref,uniform_dist> uniform_gen; 
 typedef boost::normal_distribution<double> norm_dist;  
 typedef boost::variate_generator<base_rng_ref,norm_dist> norm_gen; 
 
 const double local_pi = 3.14159265358979323846;
 
 extern class GaussianNoiseBuffer noisegen;
+extern class NoiseBuffer whitenoisegen;
 extern class SinWaveLookupTable sinWaveLookupTable;
 extern class ExponentialLookUpTable exponentialLookUpTable;
 extern class FrequencyModulatorExponentialLookUpTable frequencyModulatorExponentialLookUpTable;
@@ -211,6 +215,31 @@ class GaussianNoiseBuffer
     : counter (0)
   {
     norm_gen gen (RNG,norm_dist(0.0,1.0));
+    buffer.reserve(100000);
+    while (buffer.size()<=100000)
+      buffer.push_back(gen());
+  }
+  
+  double get() {
+    counter ++;
+    if (counter >= buffer.size())
+      counter = 0;
+    return buffer[counter];
+  }
+};
+
+
+class NoiseBuffer
+{
+ public:
+  safeVector<double> buffer;
+  size_t counter;
+  base_rng_type RNG;
+  
+  NoiseBuffer() 
+    : counter (0)
+  {
+    uniform_gen gen (RNG,uniform_dist(0.0,1.0));
     buffer.reserve(100000);
     while (buffer.size()<=100000)
       buffer.push_back(gen());

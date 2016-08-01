@@ -32,6 +32,9 @@
 #include <boost/bind.hpp>
 #include <boost/function.hpp>
 
+#include "lo/lo.h"
+
+
 ofstream mainlog ("main.log");
 
 
@@ -39,6 +42,13 @@ ofstream mainlog ("main.log");
 BCR2000Driver bcr2000Driver;
 
 using namespace stk;
+
+// handlers for osc, rtaudio and midi
+
+void osc_error(int num, const char *m, const char *path);
+int generic_osc_handler(const char *path, const char *types, lo_arg ** argv,
+                    int argc, void *data, void *user_data);
+
 
 int rtaudio_callback(
 		     void			*outbuf,
@@ -49,22 +59,97 @@ int rtaudio_callback(
 		     void * data
 		     );
 
+
 void midiCallback( double deltatime, std::vector< unsigned char > *message, void *classptr );
 void midiCallbackBCR( double deltatime, std::vector< unsigned char > *message, void *classptr );
+
+
+class MidiConnection
+{
+public:
+  class MainApplication * mainApp_ptr;
+  int channelNumber;
+  ControlInputMap inputMap;
+  shared_ptr<RtMidiIn> midiIn;
+  shared_ptr<RtMidiOut> midiOut;
+
+  string midiPortName;
+
+  MidiConnection (MainApplication * _mainApp, int _channelNumber)
+    : mainApp_ptr(_mainApp), channelNumber(_channelNumber),
+      midiIn (shared_ptr<RtMidiIn> (new RtMidiIn())),
+      midiOut (shared_ptr<RtMidiOut> (new RtMidiOut()))
+  {}
+
+  bool chooseMidiPort () {
+    std::string portName;
+    unsigned int nPorts = midiIn->getPortCount();
+    if ( nPorts == 0 ) {
+      std::cout << "No input ports available!" << std::endl;
+      return false;
+    }
+    
+    int port = -1;
+    int noport = -1;
+    vector<string> portNames;
+
+    unsigned int i;
+
+    for (i=0; i<nPorts; i++ ) {
+      portName = midiIn->getPortName(i);
+      portNames.push_back(portName);
+      if (portName.substr(0,10)=="USB Oxygen")
+	port = i;
+      std::cout << "  Input port #" << i << ": " << portName << '\n';
+    }
+
+    portNames.push_back("No binding");
+    noport = i;
+    std::cout << "  Input port #" << i << ": " << "No binding" << '\n';
+    
+    cout << "Choose midi port";
+    if (port >-1) 
+      cout << " (default " << port << ")";
+    cout << endl << ": ";
+    string input;
+    getline(cin,input);
+
+    int inputPort = port;
+    if (input.size()>0)
+      stringstream(input) >> inputPort;
+    
+    if (inputPort >-1 && inputPort < noport) {
+      midiPortName=portNames[inputPort];
+      midiIn->openPort( inputPort );
+      midiOut->openPort( inputPort );
+    }
+    else {
+      string myNameIn="Dynad input channel:"+to_string(channelNumber);
+      string myNameOut="Dynad output channel:"+to_string(channelNumber);
+      midiPortName=portNames[noport];
+      midiIn->openVirtualPort(myNameIn);
+      midiOut->openVirtualPort(myNameOut);
+      cerr << "Virtual port opened" << endl;
+    }
+    
+    return true;
+    
+  }
+};
 
 
 class MainApplication: public boost::mutex
 {
 public:
 
+  map<int, shared_ptr<ofstream> > synthRecorders;
   map<int,RPolySynthesiser> synths;
   RPolySynthesiser focalSynth;
   
-  shared_ptr<RtMidiIn> midiIn;
+  vector< MidiConnection * > midiConnections;
   shared_ptr<RtMidiIn> bcrIn;
-  shared_ptr<RtMidiOut> midiOut;
+  shared_ptr<RtMidiOut> bcrOut;
 
-  ControlInputMap inputMap;
 
   double sampleRate;
   unsigned int numChannels;
@@ -77,12 +162,21 @@ public:
   bool finished;
   bool pause;
 
+  bool performanceMode;
+
   MainApplication () 
     : sampleRate (48000), numChannels (2), 
       timePoint (0.0),
-      finished(false),pause(false) {
+      finished(false),performanceMode(false) {
     synths[0] = RPolySynthesiser(new PolySynthesiser(16,6));
     focalSynth = synths[0];
+  }
+
+  ~MainApplication ()
+  {
+    for (auto mcon:midiConnections) {
+      delete mcon;
+    }
   }
   
   void init() {
@@ -92,7 +186,16 @@ public:
     cout << "Initialising Midi input" << endl;
     if (setupMidi())
       throw "Error";
-    inputMap.load("default.map");
+    midiConnections[0]->inputMap.load("default.map");
+    cout << "Initialising OSC input" << endl;
+
+    lo_server_thread st = lo_server_thread_new("7770", osc_error);
+
+    /* add method that will match any path and args */
+    lo_server_thread_add_method(st, NULL, NULL, generic_osc_handler, this);
+
+    lo_server_thread_start(st);
+
   }
   void run() {
     
@@ -107,8 +210,14 @@ public:
       cout.flush();
       string input;
       getline(cin,input);
-      if (input[0] == 'p')
-	pause = pause? false:true;
+      if (input[0] == 'p') {
+	performanceMode = performanceMode? false:true;
+	bcr2000Driver.active = performanceMode? false:true;
+	if (performanceMode) 
+	  cout << "Performance mode, BCR now standard controller" << endl;
+	else
+	  cout << "Programming mode, enhanced BCR control" << endl;
+      }
 
       if (input[0] == 'n') {
 	// create a new synth
@@ -128,11 +237,59 @@ public:
 	  cerr << "Usage:" << endl << "n <midi channel> <num partials> <num phones>" << endl;
       }
 
+      if (input[0] == 'i') {
+	stringstream sstr(input) ;
+	string junk;
+	int channel = -1;
+	string mapname;
+	sstr >> junk >> channel >> mapname;
+	if (mapname == "")
+	  mapname = "default.map";
+	if (channel > 0) 
+	  channel -= 1;
+
+	MidiConnection *mIn = new MidiConnection (this,channel);
+	mIn->chooseMidiPort();
+	int mconNumber = midiConnections.size();
+	midiConnections.push_back(mIn);
+	mIn->midiIn->setCallback( midiCallback,(void *) mIn);
+	midiConnections[mconNumber]->inputMap.load(mapname);
+
+	cout << "New connection in slot " << mconNumber << endl;
+	cout << "Current connections" << endl
+	     << "Slot channel device" << endl;
+
+	for (unsigned int i = 0; i < midiConnections.size(); i++) {
+	  cout << i << " " 
+	       << midiConnections[i]->channelNumber+1 << " " 
+	       << midiConnections[i]->midiPortName << endl;
+	}
+
+      }
+
       if (input[0] == 'q')
 	finished = true;
 
       if (input[0] == 'o') {
 	focalSynth->controlSet->outputControllersToConsole();
+      }
+
+      if (input[0] == 'r') {
+	string junk;
+	string fname;
+	stringstream(input) >> junk >> fname;
+	if (fname.size() >0) {
+	  cout << "Recording to files starting with " << fname << endl;
+	  for (auto & entry:synths) {
+	    string sname = fname+"_"+to_string(entry.first)+".raw";
+	    synthRecorders.emplace (make_pair(entry.first,shared_ptr<ofstream> (new ofstream (sname,ofstream::binary))));
+	  }
+	  cout << "Convert with avconv -f f64le -ar 48000 -ac 2 -i <fname>.raw <fname>.wav" << endl;
+	}
+	else {
+	  cout << "Ceasing recording" << endl;
+	  synthRecorders.clear();
+	}
       }
 
       if (input[0] == 's') {
@@ -177,57 +334,28 @@ public:
     audioOut->closeStream();  
   }
 
-  bool chooseMidiPort( )
+  bool connectBCRPort( )
   {
-    //  std::cout << "\nWould you like to open a virtual input port? [y/N] ";
-    
-    //  std::string keyHit;
-    //  std::getline( std::cin, keyHit );
-    //  if ( keyHit == "y" ) {
-    //    rtmidi->openVirtualPort();
-    //    return true;
-    //  }
-    
     std::string portName;
-    unsigned int nPorts = midiIn->getPortCount();
+    unsigned int nPorts = bcrIn->getPortCount();
     if ( nPorts == 0 ) {
       std::cout << "No input ports available!" << std::endl;
       return false;
     }
     
     int bcrport = -1;
-    int vmpport = -1;
     
     for (unsigned int i=0; i<nPorts; i++ ) {
-      portName = midiIn->getPortName(i);
+      portName = bcrIn->getPortName(i);
       if (portName.substr(0,7)=="BCR2000" && bcrport == -1)
 	bcrport = i;
-      if (portName.substr(0,11)=="VMPK Output")
-	vmpport = i;
-      std::cout << "  Input port #" << i << ": " << portName << '\n';
     }
 
-    cout << "Choose midi in";
-    if (vmpport >-1) 
-      cout << " (default " << vmpport << ")";
-    cout << endl << ": ";
-    string input;
-    getline(cin,input);
-
-    int inputPort = vmpport;
-    if (input.size()>0)
-      stringstream(input) >> inputPort;
-    
-    if (inputPort >-1)
-      midiIn->openPort( inputPort );
-    else
-      cerr << "No input port!" << endl;
-    
     if (bcrport == -1) {
       std::cout << "BCR2000 not found, just not going to talk to it then. \nSee if I care." << endl;
     }
     else {
-      midiOut->openPort( bcrport );
+      bcrOut->openPort( bcrport );
       bcrIn->openPort(bcrport);
     }
     
@@ -236,27 +364,32 @@ public:
   
   
   int setupMidi () {
-    midiIn = shared_ptr<RtMidiIn> (new RtMidiIn());
-    midiOut = shared_ptr<RtMidiOut> (new RtMidiOut());
+    MidiConnection *mIn = new MidiConnection (this,-1);
+
+    bcrOut = shared_ptr<RtMidiOut> (new RtMidiOut());
     bcrIn = shared_ptr<RtMidiIn> (new RtMidiIn());
     // Call function to select port.
-    if (!chooseMidiPort()) {
+    if (!connectBCRPort()) {
       cerr << "Failed to set up midi" <<endl;
       return 1;
-  }
+    }
+    mIn->chooseMidiPort();
     
-    if (!midiOut || !midiIn) {
+    if (!bcrOut || !bcrIn) {
       cerr << "Failed to set up midi" <<endl;
       return 1;
     }
     //	midiin->setCallback( &mycallback );
-    midiIn->setCallback( midiCallback,(void *) this );
-    // Don't ignore sysex, timing, or active sensing messages.
-    midiIn->ignoreTypes( false, false, false );
+    
+    midiConnections.push_back(mIn);
+
+    mIn->midiIn->setCallback( midiCallback,(void *)mIn);
+    // Ignore sysex, timing, or active sensing messages.
+    // mIn.midiIn->ignoreTypes( false, false, false );
 
     bcrIn->setCallback( midiCallbackBCR,(void *) this );
     
-    bcr2000Driver.setMidiOut (midiOut);
+    bcr2000Driver.setMidiOut (bcrOut);
     bcr2000Driver.initialiseBCR();
 
     return 0;
@@ -346,7 +479,7 @@ int rtaudio_callback(
     //  }
 
 
-  typedef pair<RBufferWithMutex,RPolySynthesiser> RBuffSynthPair;
+  typedef pair<RBufferWithMutex,int> RBuffSynthPair;
 
   vector<RBuffSynthPair> buffersandsynths;
   boost::thread_group group;
@@ -355,6 +488,7 @@ int rtaudio_callback(
 
   for (auto synthmidichannelpair:mainapp->synths) {
 
+    int synthIndex = synthmidichannelpair.first;
     RPolySynthesiser rsynth = synthmidichannelpair.second;
     if (rsynth) {
 
@@ -366,7 +500,7 @@ int rtaudio_callback(
 				mainapp->numChannels
 				)
 			     );
-      buffersandsynths.push_back(RBuffSynthPair(buffer,rsynth));
+      buffersandsynths.push_back(RBuffSynthPair(buffer,synthIndex));
       
       for (auto phone:rsynth->getPhones()) {
 	phonesBuffers->addPair (phone,buffer);
@@ -407,7 +541,8 @@ int rtaudio_callback(
   int counter = 0;
   for (auto bufferandsynth: buffersandsynths) {
     RBufferWithMutex buffer = bufferandsynth.first;
-    RPolySynthesiser synth = bufferandsynth.second;
+    RPolySynthesiser synth = mainapp->synths[bufferandsynth.second];
+    int synthIndex = bufferandsynth.second;
 
     synth->fx.updateFXFromControllers();
 
@@ -418,13 +553,15 @@ int rtaudio_callback(
     safeVector<StkFloat> & synthbuf = buffer->getOutBufRef();
     StkFloat * outsamples = (StkFloat *)outbuf;
     for (unsigned int i=0;i<nFrames*numberOfChannels; i+=numberOfChannels) {
-      // ha ha it just takes the left channel here
-      // if I want panned partials I'll need to fix that.
-      double value = synthbuf[i];
+      // ha ha it just takes both channels
+      // if I want a single channel version I'll need to fix that
+      double lvalue = synthbuf[i];
+      double rvalue = synthbuf[i+1];
       
-      if (distortionLevel > 0) {
+      if (distortionLevel > 0 && false) {
 	// horrible hack
-	double distortionFactor = 2.0;
+	double distortionFactor = 3.0;
+	double value = lvalue+rvalue;
 	value = value/distortionFactor;
 	if (value > 1.0-distortionLevel)
 	  value = 1.0-distortionLevel;
@@ -435,8 +572,8 @@ int rtaudio_callback(
       }
 
 
-      double lval = value*pan*2.0;
-      double rval = value*(1.0-pan)*2.0;
+      double lval = lvalue*pan*2.0;
+      double rval = rvalue*(1.0-pan)*2.0;
 
 
       double cmix =synth->fx.chorusMix->getLevel(); 
@@ -484,7 +621,13 @@ int rtaudio_callback(
 	if (numberOfChannels>1) 
 	  outsamples[i+1] += rval;
       }
-
+      
+      if (mainapp->synthRecorders.find(synthIndex) != mainapp->synthRecorders.end()) {
+	mainapp->synthRecorders[synthIndex]->write (reinterpret_cast<char*>( &lval ), sizeof lval);
+	if (numberOfChannels>1)
+	  mainapp->synthRecorders[synthIndex]->write (reinterpret_cast<char*>( &rval ), sizeof rval);
+      }
+      
      
 
     }
@@ -496,6 +639,8 @@ int rtaudio_callback(
 
   return 0;
 }
+
+
 
 void midiCallback( double deltatime, std::vector< unsigned char > *message, void *classptr )
 {
@@ -517,10 +662,19 @@ void midiCallback( double deltatime, std::vector< unsigned char > *message, void
   //  if ( nBytes > 0 )
   //    std::cout << "stamp = " << deltatime << std::endl;
 
-  MainApplication * myclass = (MainApplication *)classptr;
+  MidiConnection * mCon_ptr = (MidiConnection *)classptr;
+
+  MainApplication * myclass = mCon_ptr->mainApp_ptr;
+
+  int channelNumber = mCon_ptr->channelNumber;
+  if (channelNumber ==-1) 
+    channelNumber = byte0 & 0xf;
+
+  //  cout << "Received on:" << endl
+  //       << mCon_ptr->channelNumber << " "
+  //       << mCon_ptr->midiPortName << endl;
 
   if (byte0 > 143 && byte0<160) {
-    int channelNumber = byte0-144;
     if (myclass->synths[channelNumber]){
       if (byte2 == 0)
 	myclass->synths[channelNumber]->noteOff (byte1,byte2,myclass->timePoint);
@@ -529,21 +683,17 @@ void midiCallback( double deltatime, std::vector< unsigned char > *message, void
     }
   }
   else if (byte0 > 127 && byte0<144) {
-    int channelNumber = byte0-128;
     if (myclass->synths[channelNumber])
       myclass->synths[channelNumber]->noteOff (byte1,byte2,myclass->timePoint);
   }
   else {
     if ((byte0 & 0xf0) == 0xb0) {
-      int channel = byte0-0xb0;
       int controller = byte1;
-      ControlVariable cvar(channel,controller);
-      auto range = myclass->inputMap.inputMap.equal_range(cvar);
-      cout << "CC: " << channel << " " << controller;
+      auto range = mCon_ptr->inputMap.inputMap.equal_range(controller);
+      cout << "CC: " << channelNumber << " " << controller << " " << byte2;
       for (auto it = range.first; it != range.second; ++it) {
-	int channelNumber = it->second.second;
-	string & controlName = it->second.first;
-	cout << " -> " << controlName <<"."<<channelNumber;
+	string & controlName = it->second;
+	cout << " -> " << controlName;
 	if (myclass->synths[channelNumber])
 	  myclass->synths[channelNumber]->interpretNamedControlMessage(controlName,byte2);
 	
@@ -580,7 +730,7 @@ void midiCallbackBCR( double deltatime, std::vector< unsigned char > *message, v
   //  if (byte0 == 176 && byte1 == 101)
   //    byte1 = 102;
 
-  if ((byte0 & 0xf0) == 0xb0) {
+  if ((byte0 & 0xf0) == 0xb0 && !myclass->performanceMode) {
     int channel = byte0-0xb0;
     int controller = byte1;
     ControlVariable cvar(channel,controller);
@@ -589,6 +739,108 @@ void midiCallbackBCR( double deltatime, std::vector< unsigned char > *message, v
 
 }
 
+
+int generic_osc_handler(const char *path, const char *types, lo_arg ** argv,
+                    int argc, void *data, void *user_data)
+{
+ #if 0
+    int i;
+   printf("path: <%s>\n", path);
+    for (i = 0; i < argc; i++) {
+        printf("arg %d '%c' ", i, types[i]);
+        lo_arg_pp((lo_type)types[i], argv[i]);
+        printf("\n");
+    }
+    printf("\n");
+    fflush(stdout);
+#endif
+
+    MainApplication * myclass = (MainApplication *)user_data;
+
+    // Should be /controllername/partialnumber
+    // or /controllername
+    // for xy it will be /first:second
+   
+    string controllerName = path+1;
+    size_t colon= controllerName.find(":");
+    if (colon != string::npos) {
+      string first = controllerName.substr(0,colon);
+      string second = controllerName.substr(colon+1);
+      bool success;
+      success = myclass->focalSynth->interpretOSCControlMessage(first,argv[0]->f);
+      success = myclass->focalSynth->interpretOSCControlMessage(second,argv[1]->f) && success;
+
+      if (success) {
+	cout << "Received from " << first << ": " << argv[0]->f << ", " << second << ": " << argv[1]->f << endl;
+      }
+
+    }
+    else if (controllerName == "accxyz") {
+      double x = argv[0]->f;
+      double y = argv[1]->f;
+      double z = argv[2]->f;
+      x = x+y+z;
+    }
+    else {
+      string dname = convertOSCStringToDynadString(controllerName);
+      //      cout <<"\"" << dname << "\"" << endl;
+      if (argc>0) {
+	if (myclass->focalSynth->interpretOSCControlMessage(dname,argv[0]->f)) {
+	  cout << "Received from " << controllerName << " to " << dname << ": " << argv[0]->f << endl;
+	}
+	else {
+	  cout << "Unknown from " << controllerName << " ";
+	  for (int i = 0; i<argc; i++) {
+	  lo_arg_pp((lo_type)types[i], argv[i]);
+	  cout << ", ";
+	  }
+	  cout << endl;
+	}
+      }
+    }
+
+#if 0
+    //    cout << path << " " << argc << endl;
+    string spath = path;
+    if (spath == "/3/xy1") {
+      if (argc > 1 && myclass && myclass->focalSynth) {
+	RController c1 = myclass->focalSynth->controlSet->getController ("normalSweep_frq");
+	RController c2 = myclass->focalSynth->controlSet->getController ("normalSweep_wd");
+	cout << "Received from " << spath << ": " << argv[0]->f << ", " << argv[1]->f << endl;
+	c1->receiveOSCControlMessage (argv[0]->f);
+	c2->receiveOSCControlMessage (argv[1]->f);
+	
+      }
+    }
+    else if (spath == "/3/xy2") {
+      if (argc > 1 && myclass && myclass->focalSynth) {
+	RController c1 = myclass->focalSynth->controlSet->getController ("poissonSweep_lambda");
+	RController c2 = myclass->focalSynth->controlSet->getController ("poissonSweep");
+	cout << "Received from " << spath << ": " << argv[0]->f << ", " << argv[1]->f << endl;
+	c1->receiveOSCControlMessage (argv[0]->f);
+	c2->receiveOSCControlMessage (argv[1]->f);
+	
+      }
+    }
+    else if (spath.substr(0,14) == "/2/multifader1") {
+      int partial = stoi(spath.substr(15,2)) -1;
+      string pname = "level_"+to_string(partial);
+      RController pcont = myclass->focalSynth->controlSet->getController (pname);
+      pcont->receiveOSCControlMessage(argv[0]->f);
+	cout << "Received from " << spath << ": " << argv[0]->f << endl;
+    }
+    else
+      cout << "Unknown from " << spath << endl;
+
+#endif
+    return 1;
+}
+
+void osc_error(int num, const char *msg, const char *path)
+{
+    printf("liblo server error %d in path %s: %s\n", num, path, msg);
+    fflush(stdout);
+}
 
 int
 main(void)

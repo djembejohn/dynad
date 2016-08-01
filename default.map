@@ -1,5 +1,20 @@
-# type channelIn controllerIn parameterName channelOut
-# mcn is for midicontrollers
-# bcr is for knobs on the bcr
-mcn 1 70 normalSweep 1
-mcn 1 71 normalSweep_frq 1
+# controllerIn parameterName
+118 masterVolume
+110 masterAttack
+111 masterDecay
+112 masterSustain
+113 masterRelease
+106 normalSweep
+114 normalSweep-frq
+115 normalSweep-wd
+102 poissonSweep
+116 poissonSweep-lambda
+117 freqAdj
+107 reverbMix
+108 reverbDamping
+109 reverbRoomSize
+103 echoMix
+104 echoDelay
+105 echoFeedback
+1 distortion
+

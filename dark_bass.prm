@@ -138,9 +138,9 @@ masterRelease 2.03472
 masterSustain 1
 masterVolume 0.247274
 normalSweep 0.00138992
-normalSweep_frq 7.71654
-normalSweep_ns 0
-normalSweep_wd 2
+normalSweep-frq 7.71654
+normalSweep-ns 0
+normalSweep-wd 2
 pan 0.5
 reverbDamping 0.25
 reverbMix 0.307087

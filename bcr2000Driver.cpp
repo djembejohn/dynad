@@ -19,7 +19,7 @@
 
   
 BCR2000Driver::BCR2000Driver()
-  :setNumber(0), columnModes(32,0), 
+  :active (true), setNumber(0), columnModes(32,0),
    columnKnobs(32,vector<int> (20,0)), topRowKnobMode(8,false)
 {
   vector<unsigned int> temp {102,105,106,107,102};
@@ -127,6 +127,8 @@ void BCR2000Driver::updateColumnKnobs (int columnNumber) {
 }
 
 void BCR2000Driver::interpretControlMessage (ControlVariable cvar, int byte2, RPolySynthesiser synth) {
+  if (!active)
+    return;
   if (cvar.channel == 15 && cvar.controller >89 && cvar.controller < 94) {
     changeSetNumber(cvar,byte2);
   }
@@ -172,6 +174,9 @@ void BCR2000Driver::initialiseBCR() {
 }
 
 void BCR2000Driver::updateKnobsFromControlSet(RControllerSet controlSet) {
+  if (!active)
+    return;
+  
   for (auto & controller:controlSet->controllers) {
     setColumnKnobValue(controller.first, controller.second->generateMidiControlMessageValue());
   }

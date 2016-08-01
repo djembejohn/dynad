@@ -16,6 +16,8 @@
 //    along with Dynad.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "synthesiser.h"
+#include <lo/lo.h>
+#include <lo/lo_cpp.h>
 
 
 PolySynthesiser::PolySynthesiser (int _numPartials, int _numPhones) 
@@ -53,14 +55,39 @@ void PolySynthesiser::load(string filename) {
   cout << "Loading from " << filename << endl;
   controlSet->load(filename);
   morphSet = 0;
-  bcr2000Driver.updateKnobsFromControlSet (controlSet);
-  bcr2000Driver.initialiseBCR();
+  updateController();
   unlock();
+}
+
+void PolySynthesiser::updateOSCController() {
+  lo::Address a("192.168.1.2", "7110");
+  
+  if (morphSet) {
+    for (auto & controller:morphSet->outputSet->controllerNames) {
+      string name = convertDynadStringToOSCString(controller.first);
+      float value = controller.second->generateOSCControlMessageValue ();
+
+      lo::Message m;
+      m.add(float(value));
+      a.send(name,m);
+    }
+  }
+  else {
+    for (auto & controller:controlSet->controllerNames) {
+      string name = convertDynadStringToOSCString(controller.first);
+      float value = controller.second->generateOSCControlMessageValue ();
+
+      lo::Message m;
+      m.add(float(value));
+      a.send(name,m);
+    }
+  }
 }
 
 void PolySynthesiser::updateController() {
   bcr2000Driver.updateKnobsFromControlSet (controlSet);
   bcr2000Driver.initialiseBCR();
+  updateOSCController();
 }
 
 void PolySynthesiser::loadMorph(string fname1, string fname2) {
@@ -97,6 +124,23 @@ void PolySynthesiser::interpretNamedControlMessage (string & con, int val) {
   if (controller) 
     controller->receiveMidiControlMessage (val); 
   unlock();
+}
+
+bool PolySynthesiser::interpretOSCControlMessage (string & con, double val) {
+  lock();
+  
+  if (morphSet) if (con=="morph") {
+      morphSet->morphOutput (val);
+      updateOSCController();
+    }
+  RController controller = controlSet->getController(con);
+  if (controller) 
+    controller->receiveOSCControlMessage (val); 
+  unlock();
+  if (controller)
+    return true;
+  else
+    return false;
 }
 
 
